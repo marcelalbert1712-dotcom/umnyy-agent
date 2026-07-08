@@ -352,7 +352,7 @@ export function ChatPanel({
       id: chatId,
       api: "/api/chat",
       messages: initialMessages,
-      throttle: 200,
+      experimental_throttle: 150,
       onError: (err) => {
         console.error("useChat error:", err);
       },
