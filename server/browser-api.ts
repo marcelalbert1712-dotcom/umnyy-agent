@@ -6,8 +6,8 @@ export function browserApiPlugin(): Plugin {
     name: "browser-api",
     configureServer(server) {
       server.middlewares.use("/api/browser", async (req, res) => {
-        const url = new URL(req.url ?? "", `http://${req.headers.host}`);
-        const chatId = url.searchParams.get("chatId") ?? "default";
+        const u = new URL(req.url ?? "", `http://${req.headers.host}`);
+        const chatId = u.searchParams.get("chatId") ?? "default";
 
         if (req.method !== "POST") {
           res.statusCode = 405;

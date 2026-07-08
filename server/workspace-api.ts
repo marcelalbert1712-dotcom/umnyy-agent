@@ -13,9 +13,9 @@ export function workspaceApiPlugin(): Plugin {
     name: "workspace-api",
     configureServer(server) {
       server.middlewares.use("/api/workspace", async (req, res) => {
-        const url = new URL(req.url ?? "", `http://${req.headers.host}`);
-        const parts = url.pathname.replace("/api/workspace/", "").split("/");
-        const chatId = parts[0] ?? "default";
+        // req.url is relative to mount point in Connect; e.g. "/test1" or "/test1/file.js"
+        const parts = (req.url ?? "").replace(/^\//, "").split("/");
+        const chatId = parts[0] || "default";
         const filename = parts.slice(1).join("/");
 
         // GET /api/workspace/:chatId — список файлов
