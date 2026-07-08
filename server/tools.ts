@@ -364,7 +364,7 @@ export const tools = {
   }),
   runCode: tool({
     description:
-      "Выполнить JavaScript-код на сервере. Полезно для: вычислений, анализа данных, сортировки, фильтрации, работы с JSON, генерации отчётов, создания таблиц и графиков (через console.table/log). Код выполняется в Node.js с таймаутом 15 сек. Используй console.log/table для вывода.",
+      "Выполнить JavaScript-код на сервере. Полезно для: вычислений, анализа данных, сортировки, фильтрации, работы с JSON, генерации отчётов, создания таблиц и графиков (через console.table/log). Код выполняется в Node.js с таймаутом 15 сек. Используй console.log/table для вывода. ВАЖНО: перед выполнением кода, который может изменить данные (удаление, перезапись, отправка запросов), сначала покажи пользователю что собираешься запустить и спроси подтверждения.",
     inputSchema: z.object({
       code: z.string().describe("JavaScript-код для выполнения"),
     }),
@@ -386,7 +386,7 @@ export const tools = {
   }),
   browserAgent: tool({
     description:
-      "Управление браузером. Доступные действия: navigate (перейти на URL — http://, https://), screenshot (сделать скриншот — возвращает data:image), click (клик по координатам x, y), type (ввод текста), scroll (прокрутка dx, dy), getText (получить текст страницы), close (закрыть сессию). Всегда делай screenshot после navigate. Для открытия сохранённых файлов используй httpPath (например, http://localhost:5173/api/workspace/...)",
+      "Управление браузером. Доступные действия: navigate (перейти на URL — http://, https://), screenshot (сделать скриншот — возвращает data:image), click (клик по координатам x, y), type (ввод текста), scroll (прокрутка dx, dy), getText (получить текст страницы), close (закрыть сессию). Всегда делай screenshot после navigate. В ответе пользователю вставь скриншот как markdown-изображение: ![screenshot](data:image/jpeg;base64,...). Для открытия сохранённых файлов используй httpPath (например, http://localhost:5173/api/workspace/...)",
     inputSchema: z.object({
       action: z.enum(["navigate", "screenshot", "click", "type", "scroll", "getText", "close"]),
       url: z.string().optional().describe("URL для navigate"),
@@ -460,6 +460,26 @@ export const tools = {
       const filePath = path.join(dir, filename);
       await fs.writeFile(filePath, content, "utf8");
       return { ok: true, filePath, httpPath: `/api/workspace/${currentChatId}/${filename}` };
+    },
+  }),
+  downloadFile: tool({
+    description: "Скачать файл из интернета и сохранить в рабочее пространство чата. Поддерживает HTML, CSS, JS, JSON, CSV, изображения и другие типы. Используй для загрузки внешних ресурсов.",
+    inputSchema: z.object({
+      url: z.string().describe("Полный URL файла (http:// или https://)"),
+      filename: z.string().optional().describe("Имя для сохранения (по умолчанию из URL)"),
+    }),
+    execute: async ({ url, filename }) => {
+      const { promises: fs } = await import("node:fs");
+      const path = await import("node:path");
+      const dir = path.join(process.cwd(), ".user-data", "workspace", currentChatId);
+      await fs.mkdir(dir, { recursive: true });
+      const name = filename ?? (path.basename(new URL(url).pathname) || "downloaded-file");
+      const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const buf = Buffer.from(await res.arrayBuffer());
+      const filePath = path.join(dir, name);
+      await fs.writeFile(filePath, buf);
+      return { ok: true, filePath, httpPath: `/api/workspace/${currentChatId}/${name}`, size: buf.length, contentType: res.headers.get("content-type") ?? "" };
     },
   }),
 };

@@ -10,35 +10,44 @@ Manus-подобный агент: запуск кода, multi-agent плани
 - AI: PolzaAI, ключ в `.env`: `POLZAAI_API_KEY`
 - Git: `C:\Program Files\Git\bin\git.exe`
 - Playwright + Chromium (headless) установлены
+- `@ai-sdk/react@4.0.18` + `ai@7.0.17` + `@ai-sdk/openai@4.0.8`
+- `useChat` с `api="/api/chat"` + `experimental_throttle: 150`
 
-## Completed
-- Ползунок температуры (0–2, шаг 0.1) в шапке чата
-- Архивация/восстановление/удаление чатов
-- Подсветка поиска `<mark>` в сообщениях
-- Хоткеи: Ctrl+N/E/L, Ctrl+Shift+C, Escape, ?
-- `/api/run-code` — выполнение JS на сервере (node -e), кнопка Run на code-блоках
-- Multi-agent SYSTEM_PROMPT (Планируй→Исполняй→Анализируй→Сообщи)
-- Асинхронные задачи: task-queue + tasks-api + TaskPanel в сайдбаре
-- Воркспейсы: `/api/workspace` (CRUD файлов), saveFile tool, WorkspacePanel
-- Computer Use: Playwright browser, `/api/browser` (navigate/screenshot/click/type/scroll), browserAgent tool, BrowserPanel с лайв-скриншотами
+## Completed Features
+- **UI**: ползунок температуры, архив чатов, подсветка поиска, хоткеи
+- **Код**: `/api/run-code` (JS + Python), кнопка Run на code-блоках
+- **Планирование**: SYSTEM_PROMPT (Планируй→Исполняй→Анализируй→Сообщи), multi-agent
+- **Асинхронные задачи**: task-queue + API + TaskPanel
+- **Воркспейсы**: `/api/workspace` (CRUD), `saveFile` + `downloadFile` tools, WorkspacePanel
+- **Computer Use**: Playwright browser, `/api/browser`, `browserAgent` tool, BrowserPanel
+- **Веб-поиск**: `webSearch` tool — DuckDuckGo HTML scraping
+- **Память**: `saveUserFact`/`updateUserFact`/`deleteUserFact` — facts fed in system prompt
+- **Голосовой ввод**: MediaRecorder → Whisper API (`/api/transcribe`)
+- **Озвучка**: SpeakButton с SpeechSynthesis на каждом сообщении ассистента
+- **Визуализация tool-запросов**: Collapsible Tool-карточки (вход/выход/ошибка)
+- **Повтор сообщения**: кнопка Retry на user-сообщениях (удаляет + отправляет заново)
 
-## Tools & API Endpoints
-- `runCode` — JS на сервере
-- `saveFile` — сохранение в workspace
-- `browserAgent` — управление браузером (navigate/screenshot/click/type/scroll/getText/close)
+## Tools
+- `getCurrentTime`, `getWeather`, `webSearch`, `calculator`, `generateImage`
+- `runCode` — JS (node -e) / Python (python или python3)
+- `saveFile` — сохранение в workspace, возвращает httpPath
+- `downloadFile` — скачать URL → workspace
+- `browserAgent` — navigate/screenshot/click/type/scroll/getText/close
+- `saveUserFact` / `updateUserFact` / `deleteUserFact` — память о пользователе
 
 ### Vite middleware
+- `/api/chat` — SSE stream чата
 - `/api/run-code` — выполнить код
 - `/api/tasks` — CRUD async задач
 - `/api/workspace/:chatId/:filename` — файлы workspace
 - `/api/browser?chatId=` — управление браузером
 - `/api/settings` — температура
+- `/api/transcribe` — распознавание голоса (Whisper)
 
 ### Netlify Functions
 - `netlify/functions/run-code.mts`
 - `netlify/functions/tasks.mts`
 
 ## Known Issues
-- Python run-code не работает на Windows
-- browserAgent tool использует chatId="agent" а не реальный chatId
+- Python может быть не установлен на Windows; перебирает `python` → `python3`
 - Browser sessions не очищаются при закрытии чата

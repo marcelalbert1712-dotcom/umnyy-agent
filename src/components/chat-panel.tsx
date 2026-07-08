@@ -1,10 +1,6 @@
 import { useChat } from "@ai-sdk/react";
 import { type UIMessage } from "ai";
 import {
-  CheckCircle2Icon,
-  CircleAlertIcon,
-  CircleSlashIcon,
-  ClockIcon,
   CopyIcon,
   DownloadIcon,
   EraserIcon,
@@ -40,6 +36,7 @@ import {
   ReasoningContent,
   ReasoningTrigger,
 } from "@/components/ai-elements/reasoning";
+import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from "@/components/ai-elements/tool";
 import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -90,6 +87,11 @@ const TOOL_TITLES: Record<string, string> = {
   getWeather: "Погода",
   webSearch: "Веб-поиск",
   calculator: "Калькулятор",
+  generateImage: "Генерация картинки",
+  runCode: "Запуск кода",
+  saveFile: "Сохранение файла",
+  downloadFile: "Загрузка файла",
+  browserAgent: "Браузер",
   saveUserFact: "Память",
   updateUserFact: "Память",
   deleteUserFact: "Память",
@@ -101,6 +103,10 @@ const TOOL_COLORS: Record<string, string> = {
   webSearch: "text-tool-search",
   calculator: "text-tool-calc",
   generateImage: "text-tool-image",
+  runCode: "text-tool-code",
+  saveFile: "text-tool-file",
+  downloadFile: "text-tool-file",
+  browserAgent: "text-tool-browser",
   saveUserFact: "text-tool-memory",
   updateUserFact: "text-tool-memory",
   deleteUserFact: "text-tool-memory",
@@ -114,101 +120,6 @@ type ToolPartLike = {
   errorText?: string;
   toolName?: string;
 };
-
-type ToolStatus =
-  | "running"
-  | "done"
-  | "error"
-  | "denied"
-  | "awaiting"
-  | "unknown";
-
-function statusOf(state: string): ToolStatus {
-  switch (state) {
-    case "input-streaming":
-    case "input-available":
-      return "running";
-    case "output-available":
-      return "done";
-    case "output-error":
-      return "error";
-    case "output-denied":
-      return "denied";
-    case "approval-requested":
-      return "awaiting";
-    default:
-      return "unknown";
-  }
-}
-
-const TOOL_STATUS_TEXT: Record<ToolStatus, string> = {
-  running: "выполняется…",
-  done: "готово",
-  error: "ошибка",
-  denied: "отклонено",
-  awaiting: "ожидает подтверждения",
-  unknown: "",
-};
-
-function ToolStatusIcon({ status }: { status: ToolStatus }) {
-  switch (status) {
-    case "running":
-      return <ClockIcon className="size-3.5 animate-spin text-muted-foreground" />;
-    case "done":
-      return <CheckCircle2Icon className="size-3.5 text-green-600" />;
-    case "error":
-      return <CircleAlertIcon className="size-3.5 text-red-600" />;
-    case "denied":
-    case "awaiting":
-      return <CircleSlashIcon className="size-3.5 text-orange-600" />;
-    default:
-      return <WrenchIcon className="size-3.5 text-muted-foreground" />;
-  }
-}
-
-function summarizeToolInput(name: string, input: unknown): string {
-  if (!input || typeof input !== "object") return "";
-  const obj = input as Record<string, unknown>;
-  if (name === "getWeather" && typeof obj.city === "string") return obj.city;
-  if (name === "getCurrentTime" && typeof obj.timezone === "string")
-    return obj.timezone;
-  if (name === "webSearch" && typeof obj.query === "string") return obj.query;
-  if (name === "calculator" && typeof obj.expression === "string")
-    return obj.expression;
-  if (name === "saveUserFact" && typeof obj.text === "string") return obj.text;
-  if (name === "updateUserFact" && typeof obj.text === "string") return obj.text;
-  if (name === "deleteUserFact" && typeof obj.id === "string") return obj.id;
-  return "";
-}
-
-function ToolView({ part }: { part: ToolPartLike }) {
-  const isDynamic = part.type === "dynamic-tool";
-  const rawName = isDynamic
-    ? part.toolName ?? "tool"
-    : part.type.slice("tool-".length);
-  const pretty = TOOL_TITLES[rawName] ?? rawName;
-  const status = statusOf(part.state);
-  const detail = summarizeToolInput(rawName, part.input);
-  const toolColor = TOOL_COLORS[rawName] ?? "text-muted-foreground";
-
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 py-0.5 text-xs",
-        status === "error" ? "text-destructive" : "text-muted-foreground",
-      )}
-    >
-      <span className={toolColor}>
-        <ToolStatusIcon status={status} />
-      </span>
-      <span className={cn("font-medium", toolColor)}>{pretty}</span>
-      {detail && <span className="truncate opacity-70">· {detail}</span>}
-      {TOOL_STATUS_TEXT[status] && (
-        <span className="opacity-70">— {TOOL_STATUS_TEXT[status]}</span>
-      )}
-    </div>
-  );
-}
 
 function TypingDots() {
   return (
@@ -632,6 +543,13 @@ export function ChatPanel({
     setEditText(text);
   };
 
+  const retryMessage = (msgId: string, text: string) => {
+    const idx = messages.findIndex((m) => m.id === msgId);
+    if (idx === -1) return;
+    setMessages(messages.slice(0, idx));
+    setTimeout(() => sendMessage({ text }), 0);
+  };
+
   const saveEdit = () => {
     if (!editingMsgId || !editText.trim()) { setEditingMsgId(null); return; }
     const idx = messages.findIndex((m) => m.id === editingMsgId);
@@ -795,7 +713,17 @@ export function ChatPanel({
       }
 
       if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
-        return <ToolView key={key} part={part as unknown as ToolPartLike} />;
+        const tp = part as unknown as ToolPartLike;
+        const rawName = tp.type === "dynamic-tool" ? tp.toolName ?? "tool" : tp.type.slice("tool-".length);
+        return (
+          <Tool key={key} defaultOpen={false}>
+            <ToolHeader title={TOOL_TITLES[rawName] ?? rawName} type={tp.type as any} state={tp.state as any} toolName={tp.toolName} />
+            <ToolContent>
+              {tp.input != null && <ToolInput input={tp.input} />}
+              {tp.output != null && <ToolOutput output={tp.output} errorText={tp.errorText} />}
+            </ToolContent>
+          </Tool>
+        );
       }
 
       return null;
@@ -986,6 +914,27 @@ export function ChatPanel({
                   >
                     JSON (.json)
                   </button>
+                  <hr className="my-1 border-border" />
+                  <label className="flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-accent">
+                    Импорт JSON…
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        const { parseImportJson } = await import("@/lib/export-chat");
+                        const data = await parseImportJson(f);
+                        if (data) {
+                          onSaveMessages(chatId, data.messages);
+                          setMenuOpen(false);
+                        } else {
+                          alert("Неверный формат JSON");
+                        }
+                      }}
+                    />
+                  </label>
                 </div>
               </>
             )}
@@ -1219,6 +1168,17 @@ export function ChatPanel({
                           title="Редактировать"
                         >
                           <PencilIcon className="size-3.5" />
+                        </button>
+                      )}
+                      {!isAssistant && (
+                        <button
+                          type="button"
+                          onClick={() => retryMessage(message.id, msgText)}
+                          className="flex size-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+                          aria-label="Повторить"
+                          title="Повторить"
+                        >
+                          <RefreshCwIcon className="size-3.5" />
                         </button>
                       )}
                       <button

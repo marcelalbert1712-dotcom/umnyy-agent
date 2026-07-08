@@ -7,6 +7,7 @@ import {
   listChats,
   saveChat,
 } from "./chat-storage.ts";
+import { closeChatSession } from "./browser-session.ts";
 import type { UIMessage } from "ai";
 
 async function readBody(req: IncomingMessage): Promise<string> {
@@ -42,14 +43,38 @@ export function chatsApiPlugin(): Plugin {
           return;
         }
 
-        try {
-          // /api/chats — список + создание
-          if (pathname === "/api/chats") {
-            if (req.method === "GET") {
-              const chats = await listChats();
-              return sendJson(res, 200, { chats });
+          try {
+            // /api/chats/search?q= — глобальный поиск по всем сообщениям
+            if (pathname === "/api/chats/search" && req.method === "GET") {
+              const q = url.searchParams.get("q")?.trim().toLowerCase();
+              if (!q) return sendJson(res, 400, { error: "query required" });
+              const all = await listChats();
+              const results: Array<{ chatId: string; chatTitle: string; messages: Array<{ id: string; role: string; text: string }> }> = [];
+              for (const chat of all) {
+                const record = await getChat(chat.id);
+                if (!record) continue;
+                const hits: Array<{ id: string; role: string; text: string }> = [];
+                for (const msg of record.messages) {
+                  for (const part of msg.parts) {
+                    if (part.type === "text" && "text" in part && (part as any).text.toLowerCase().includes(q)) {
+                      hits.push({ id: msg.id, role: msg.role, text: (part as any).text.slice(0, 200) });
+                    }
+                  }
+                }
+                if (hits.length > 0) {
+                  results.push({ chatId: chat.id, chatTitle: chat.title, messages: hits });
+                }
+              }
+              return sendJson(res, 200, { results });
             }
-            if (req.method === "POST") {
+
+            // /api/chats — список + создание
+            if (pathname === "/api/chats") {
+              if (req.method === "GET") {
+                const chats = await listChats();
+                return sendJson(res, 200, { chats });
+              }
+              if (req.method === "POST") {
               let title: string | undefined;
               try {
                 const body = JSON.parse(await readBody(req));
@@ -91,6 +116,7 @@ export function chatsApiPlugin(): Plugin {
             }
 
             if (req.method === "DELETE") {
+              await closeChatSession(id);
               await deleteChat(id);
               return sendJson(res, 200, { ok: true });
             }

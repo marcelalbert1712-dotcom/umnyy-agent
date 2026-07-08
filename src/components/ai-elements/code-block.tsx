@@ -16,6 +16,7 @@ export type CodeBlockProps = {
 export function CodeBlock({ code, language = "text", className, onRunOutput }: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
   const [running, setRunning] = useState(false);
+  const [confirmRun, setConfirmRun] = useState(false);
   const [output, setOutput] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isRunnable = RUNNABLE.has(language);
@@ -84,13 +85,26 @@ export function CodeBlock({ code, language = "text", className, onRunOutput }: C
       <div className="flex items-center justify-between border-b border-border/60 px-3 py-1.5">
         <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{language}</span>
         <div className="flex items-center gap-1">
-          {isRunnable && (
-            <button type="button" onClick={handleRun} disabled={running}
+          {isRunnable && !confirmRun && (
+            <button type="button" onClick={() => setConfirmRun(true)} disabled={running}
               className="flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground disabled:opacity-50"
               aria-label="Запустить" title="Запустить код">
               {running ? <LoaderIcon className="size-3.5 animate-spin" /> : <PlayIcon className="size-3.5" />}
               <span className="text-[10px]">Run</span>
             </button>
+          )}
+          {confirmRun && (
+            <span className="flex items-center gap-1 text-[10px]">
+              <span className="text-muted-foreground">Запустить?</span>
+              <button type="button" onClick={() => { setConfirmRun(false); handleRun(); }}
+                className="rounded bg-destructive/10 px-1.5 py-0.5 text-destructive hover:bg-destructive/20">
+                Да
+              </button>
+              <button type="button" onClick={() => setConfirmRun(false)}
+                className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-background/60">
+                Нет
+              </button>
+            </span>
           )}
           <button type="button" onClick={handleCopy}
             className="flex items-center gap-1 rounded px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"

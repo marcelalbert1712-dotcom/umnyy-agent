@@ -107,3 +107,27 @@ export function openAsPdf(messages: UIMessage[], title: string) {
     a.remove();
   }
 }
+
+export function downloadAsJson(messages: UIMessage[], title: string) {
+  const safe = title.replace(/[^a-zA-Zа-яА-Я0-9_-]/g, "_").substring(0, 50);
+  const data = JSON.stringify({ title, messages, exportedAt: Date.now() }, null, 2);
+  downloadBlob(data, `${safe}.json`, "application/json;charset=utf-8");
+}
+
+export function parseImportJson(file: File): Promise<{ title: string; messages: UIMessage[] } | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result as string);
+        if (data && Array.isArray(data.messages)) {
+          resolve({ title: data.title || "Импорт", messages: data.messages });
+        } else {
+          resolve(null);
+        }
+      } catch { resolve(null); }
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsText(file);
+  });
+}

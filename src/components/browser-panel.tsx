@@ -5,8 +5,7 @@ import { GlobeIcon, RefreshCwIcon, ExternalLinkIcon } from "lucide-react";
 
 export function BrowserPanel({ chatId }: { chatId: string }) {
   const [screenshot, setScreenshot] = useState<string | null>(null);
-  const [pageTitle, setPageTitle] = useState<string>("");
-  const [pageUrl, setPageUrl] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const hasEverLoaded = useRef(false);
 
@@ -18,15 +17,23 @@ export function BrowserPanel({ chatId }: { chatId: string }) {
         body: JSON.stringify({ action: "screenshot" }),
       });
       const data = await res.json();
+      console.log("[BrowserPanel] refresh result:", res.status, data);
+      if (!res.ok) {
+        if (res.status === 500) setError(data.error ?? "Ошибка браузера");
+        setScreenshot(null);
+        return;
+      }
       if (data.screenshot) {
         setScreenshot(data.screenshot);
+        setError(null);
         if (!hasEverLoaded.current) {
           hasEverLoaded.current = true;
           setOpen(true);
+          console.log("[BrowserPanel] auto-open triggered");
         }
       }
     } catch {
-      /* browser not active */
+      console.log("[BrowserPanel] fetch failed (browser not active)");
     }
   }, [chatId]);
 
@@ -44,10 +51,16 @@ export function BrowserPanel({ chatId }: { chatId: string }) {
       >
         <GlobeIcon className="size-3.5" />
         <span className="flex-1 text-left">Браузер</span>
-        {screenshot && <span className="size-1.5 rounded-full bg-green-500" title="Браузер активен" />}
+        {error && <span className="size-1.5 rounded-full bg-red-500" title={error} />}
+        {screenshot && !error && <span className="size-1.5 rounded-full bg-green-500" title="Браузер активен" />}
       </button>
       {open && (
         <div className="px-2 pb-2">
+          {error && (
+            <p className="mb-1 rounded bg-red-500/10 px-2 py-1 text-[10px] text-red-500">
+              {error}
+            </p>
+          )}
           {screenshot ? (
             <div className="relative">
               <img src={screenshot} alt="Browser screenshot" className="w-full rounded-lg border" />

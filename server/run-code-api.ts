@@ -16,13 +16,27 @@ function runCode(language: string, code: string): { stdout: string; stderr: stri
   }
 
   if (language === "python" || language === "py") {
-    const result = execSync(`python3 -c ${JSON.stringify(code)}`, {
-      timeout,
-      maxBuffer: 1024 * 100,
-      windowsHide: true,
-      encoding: "utf8",
-    });
-    return { stdout: result.trim(), stderr: "" };
+    const candidates = process.platform === "win32" ? ["python", "python3"] : ["python3", "python"];
+    let lastErr: unknown;
+    for (const bin of candidates) {
+      try {
+        const result = execSync(`${bin} -c ${JSON.stringify(code)}`, {
+          timeout,
+          maxBuffer: 1024 * 100,
+          windowsHide: true,
+          encoding: "utf8",
+        });
+        return { stdout: result.trim(), stderr: "" };
+      } catch (err) {
+        lastErr = err;
+        if (err && typeof err === "object" && "stderr" in err) {
+          const stderr = (err as { stderr: string }).stderr?.toString() ?? "";
+          if (stderr.includes("No such file") || stderr.includes("not found") || stderr.includes("not recognized")) continue;
+        }
+        throw err;
+      }
+    }
+    throw lastErr;
   }
 
   throw new Error(`Unsupported language: ${language}`);

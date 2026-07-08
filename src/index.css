@@ -64,6 +64,9 @@
   --color-tool-calc: #ec4899;
   --color-tool-image: #8b5cf6;
   --color-tool-memory: #14b8a6;
+  --color-tool-code: #f97316;
+  --color-tool-file: #06b6d4;
+  --color-tool-browser: #22c55e;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

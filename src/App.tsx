@@ -94,6 +94,7 @@ function App() {
           onOpenAdmin={() => { openAdmin(); closeMobile(); }}
           getMessages={getMessages}
           setChatFolder={setChatFolder}
+          saveMessages={saveMessages}
         />
       </div>
 

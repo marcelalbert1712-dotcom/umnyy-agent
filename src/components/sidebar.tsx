@@ -19,6 +19,9 @@ import {
   FolderIcon,
   FolderPlusIcon,
   FolderOpenIcon,
+  GlobeIcon,
+  LoaderIcon,
+  DownloadIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -50,6 +53,7 @@ export type SidebarProps = {
   onOpenAdmin: () => void;
   getMessages?: (id: string) => UIMessage[];
   setChatFolder?: (id: string, folder: string | null) => void;
+  saveMessages?: (id: string, messages: UIMessage[]) => Promise<void>;
 };
 
 function timeAgo(ts: number): string {
@@ -89,6 +93,9 @@ export function Sidebar({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [globalSearch, setGlobalSearch] = useState(false);
+  const [globalResults, setGlobalResults] = useState<Array<{ chatId: string; chatTitle: string; messages: Array<{ id: string; role: string; text: string }> }>>([]);
+  const [globalSearching, setGlobalSearching] = useState(false);
   const [showTemplates, setShowTemplates] = useState(false);
   const [folders, setFolders] = useState<FolderDef[]>([]);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -266,6 +273,18 @@ export function Sidebar({
       </div>
     );
   };
+
+  useEffect(() => {
+    if (!globalSearch || !searchQuery.trim()) { setGlobalResults([]); return; }
+    const t = setTimeout(async () => {
+      setGlobalSearching(true);
+      try {
+        const res = await fetch(`/api/chats/search?q=${encodeURIComponent(searchQuery.trim())}`);
+        if (res.ok) { const d = await res.json(); setGlobalResults(d.results ?? []); }
+      } catch { /* ignore */ } finally { setGlobalSearching(false); }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [globalSearch, searchQuery]);
 
   const filteredChats = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -473,15 +492,40 @@ export function Sidebar({
       </div>
 
       <div className="relative px-3 pb-2">
-        <Button
-          variant="outline"
-          type="button"
-          onClick={() => setShowTemplates((v) => !v)}
-          className="w-full justify-start gap-2"
-        >
-          <MessageSquarePlusIcon className="size-4" />
-          Новый чат
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() => setShowTemplates((v) => !v)}
+            className="flex-1 justify-start gap-2"
+          >
+            <MessageSquarePlusIcon className="size-4" />
+            Новый чат
+          </Button>
+          <label className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border text-muted-foreground hover:bg-accent hover:text-foreground" title="Импорт чата из JSON">
+            <DownloadIcon className="size-4 rotate-180" />
+            <input
+              type="file"
+              accept=".json"
+              className="hidden"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                try {
+                  const { parseImportJson } = await import("@/lib/export-chat");
+                  const data = await parseImportJson(f);
+                  if (data && data.messages.length > 0) {
+                    const id = await createChat(data.title);
+                    if (id) onSaveMessages?.(id, data.messages);
+                  } else {
+                    alert("Неверный формат JSON");
+                  }
+                } catch { alert("Ошибка импорта"); }
+                e.target.value = "";
+              }}
+            />
+          </label>
+        </div>
         {showTemplates && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setShowTemplates(false)} />
@@ -508,7 +552,7 @@ export function Sidebar({
       </div>
 
       <div className="px-3 pb-2">
-        <div className="relative">
+        <div className="relative flex items-center gap-1">
           <SearchIcon className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
             ref={searchRef}
@@ -517,10 +561,46 @@ export function Sidebar({
             onKeyDown={(e) => {
               if (e.key === "Escape") { setSearchQuery(""); searchRef.current?.blur(); }
             }}
-            placeholder="Поиск чатов и сообщений…"
-            className="h-8 w-full rounded-lg border border-border bg-background pl-8 pr-3 text-xs outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
+            placeholder={globalSearch ? "Поиск по всем чатам…" : "Поиск чатов и сообщений…"}
+            className="h-8 w-full rounded-lg border border-border bg-background pl-8 pr-8 text-xs outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
           />
+          <button
+            type="button"
+            onClick={() => { setGlobalSearch((v) => !v); setGlobalResults([]); }}
+            className={cn(
+              "absolute right-1 flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground",
+              globalSearch && "text-primary",
+            )}
+            title={globalSearch ? "Локальный поиск" : "Глобальный поиск"}
+            aria-label={globalSearch ? "Локальный поиск" : "Глобальный поиск"}
+          >
+            {globalSearching ? <LoaderIcon className="size-3.5 animate-spin" /> : <GlobeIcon className="size-3.5" />}
+          </button>
         </div>
+        {globalSearch && searchQuery.trim() && (
+          <div className="mt-1 max-h-48 overflow-y-auto rounded border bg-background">
+            {globalResults.length === 0 && !globalSearching ? (
+              <p className="p-2 text-[10px] text-muted-foreground">Ничего не найдено.</p>
+            ) : (
+              globalResults.map((r) => (
+                <button
+                  key={r.chatId}
+                  type="button"
+                  onClick={() => { onSelect(r.chatId); setSearchQuery(""); setGlobalResults([]); }}
+                  className="flex w-full flex-col gap-0.5 px-2 py-1.5 text-left text-xs hover:bg-accent"
+                >
+                  <span className="font-medium truncate">{r.chatTitle}</span>
+                  {r.messages.slice(0, 2).map((m) => (
+                    <span key={m.id} className="truncate text-[10px] text-muted-foreground">
+                      <span className={m.role === "user" ? "text-foreground" : "text-primary"}>{m.role === "user" ? "→" : "←"}</span> {m.text}
+                    </span>
+                  ))}
+                  {r.messages.length > 2 && <span className="text-[10px] text-muted-foreground/60">+ ещё {r.messages.length - 2}</span>}
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-2">
