@@ -1,5 +1,6 @@
 import type { Plugin } from "vite";
 import { createTask, getTask, listTasks, deleteTask, runTaskInBackground } from "./task-queue.ts";
+import { runBackgroundAgent } from "./background-agent.ts";
 
 export function tasksApiPlugin(): Plugin {
   return {
@@ -21,13 +22,11 @@ export function tasksApiPlugin(): Plugin {
               res.end(JSON.stringify({ error: "goal is required" }));
               return;
             }
-            const task = await createTask(body.chatId ?? "default", body.goal);
-            // Запускаем фоновое выполнение (имитация — просто ждём)
-            runTaskInBackground(task.id, async () => {
-              // Здесь можно подключить реальный вызов LLM
-              await new Promise((r) => setTimeout(r, 3000));
-              return `Задача "${body.goal}" выполнена. Результат будет доступен в чате.`;
-            });
+            const chatId = body.chatId ?? "default";
+            const task = await createTask(chatId, body.goal);
+            runTaskInBackground(task.id, () =>
+              runBackgroundAgent(task.id, chatId, body.goal),
+            );
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify({ task }));
           } catch (err) {

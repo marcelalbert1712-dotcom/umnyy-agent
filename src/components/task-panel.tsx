@@ -23,6 +23,7 @@ type Task = {
   status: TaskStatus;
   result?: string;
   error?: string;
+  progress?: string;
   createdAt: number;
 };
 
@@ -140,7 +141,12 @@ export function TaskPanel({
             return (
               <div key={task.id} className="group flex items-start gap-2 rounded-lg px-2 py-1.5 text-xs">
                 <Icon className={cn("mt-0.5 size-3 shrink-0", STATUS_COLORS[task.status], task.status === "running" && "animate-spin")} />
-                <span className="flex-1 text-muted-foreground line-clamp-2">{task.goal}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-muted-foreground line-clamp-2">{task.goal}</div>
+                  {task.progress && task.status === "running" && (
+                    <div className="truncate text-[10px] text-muted-foreground/60">{task.progress}</div>
+                  )}
+                </div>
                 <button type="button" onClick={() => handleDelete(task.id)}
                   className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground group-hover:block"
                   aria-label="Удалить">
@@ -159,7 +165,10 @@ export function TaskPanel({
                 <Icon className={cn("mt-0.5 size-3 shrink-0", STATUS_COLORS[task.status])} />
                 <div className="flex-1 min-w-0">
                   <div className="truncate text-muted-foreground">{task.goal}</div>
-                  {task.result && <div className="truncate text-[10px] text-muted-foreground/60">{task.result}</div>}
+                  {task.progress && task.status === "done" && (
+                    <div className="truncate text-[10px] text-muted-foreground/60">{task.progress}</div>
+                  )}
+                  {task.result && <div className="line-clamp-2 text-[10px] text-muted-foreground/70">{task.result}</div>}
                   {task.error && <div className="truncate text-[10px] text-destructive/70">{task.error}</div>}
                 </div>
                 <div className="flex items-center gap-0.5">

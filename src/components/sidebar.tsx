@@ -30,7 +30,6 @@ import type { ChatMeta } from "@/lib/chat-store";
 import type { UIMessage } from "ai";
 import { Logo } from "@/components/logo";
 import { CHAT_TEMPLATES } from "@/lib/presets";
-import { TaskPanel } from "@/components/task-panel";
 import { WorkspacePanel } from "@/components/workspace-panel";
 import { BrowserPanel } from "@/components/browser-panel";
 
@@ -715,7 +714,6 @@ export function Sidebar({
       </div>
 
       {activeId && <WorkspacePanel chatId={activeId} />}
-      {activeId && <TaskPanel chatId={activeId} onInsertResult={(text) => { /* can be wired up */ }} />}
       {activeId && <BrowserPanel chatId={activeId} />}
       <div className="shrink-0 border-t p-3">
         <div className="flex items-center gap-2">

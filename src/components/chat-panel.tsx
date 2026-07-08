@@ -47,6 +47,7 @@ import {
 import { pushAction } from "@/lib/action-log";
 import { downloadAsMarkdown, downloadAsText, openAsPdf } from "@/lib/export-chat";
 import { PlanPanel } from "@/components/plan-panel";
+import { TaskPanel } from "@/components/task-panel";
 
 const SUGGESTIONS = [
   {
@@ -1082,6 +1083,25 @@ export function ChatPanel({
             variant="ghost"
             size="sm"
             type="button"
+            onClick={() => {
+              if (!input.trim()) return;
+              fetch("/api/tasks", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ chatId, goal: input.trim() }),
+              });
+              setInput("");
+            }}
+            disabled={isStreaming || !input.trim()}
+            title="Запустить в фоне"
+          >
+            <PlusIcon className="size-4" />
+            В фон
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
             onClick={() => setResearchMode((v) => !v)}
             disabled={isStreaming}
             className={researchMode ? "text-primary" : ""}
@@ -1382,6 +1402,18 @@ export function ChatPanel({
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
+
+      <TaskPanel
+        chatId={chatId}
+        onInsertResult={(text) => {
+          const resultMsg = {
+            id: `bg-result-${Date.now()}`,
+            role: "assistant" as const,
+            parts: [{ type: "text" as const, text }],
+          } as any;
+          setMessages((prev: any) => [...prev, resultMsg]);
+        }}
+      />
 
       <div className="shrink-0 border-t p-3">
         <div className="mx-auto w-full max-w-3xl space-y-2">

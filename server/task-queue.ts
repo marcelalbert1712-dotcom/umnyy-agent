@@ -10,6 +10,7 @@ export type Task = {
   status: TaskStatus;
   result?: string;
   error?: string;
+  progress?: string;
   createdAt: number;
   updatedAt: number;
 };
