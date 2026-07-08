@@ -145,9 +145,20 @@ export const ToolOutput = ({
   let Output = <div>{output as ReactNode}</div>;
 
   if (typeof output === "object" && !isValidElement(output)) {
-    Output = <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />;
+    const obj = output as Record<string, unknown>;
+    if (typeof obj.screenshot === "string" && obj.screenshot.startsWith("data:image/")) {
+      Output = <img src={obj.screenshot} alt="Screenshot" className="w-full rounded" />;
+    } else if (typeof obj.imageUrl === "string" && (obj.imageUrl.startsWith("http") || obj.imageUrl.startsWith("data:"))) {
+      Output = <img src={obj.imageUrl} alt="Generated" className="w-full rounded" />;
+    } else {
+      Output = <CodeBlock code={JSON.stringify(output, null, 2)} language="json" />;
+    }
   } else if (typeof output === "string") {
-    Output = <CodeBlock code={output} language="json" />;
+    if (output.startsWith("data:image/")) {
+      Output = <img src={output} alt="Image" className="w-full rounded" />;
+    } else {
+      Output = <CodeBlock code={output} language="json" />;
+    }
   }
 
   return (

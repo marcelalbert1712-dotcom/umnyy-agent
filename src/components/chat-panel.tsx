@@ -683,6 +683,10 @@ export function ChatPanel({
     isLast: boolean,
   ): ReactNode[] => {
     let step = 0;
+    const toolIndices = message.parts
+      .map((p, i) => (p.type === "dynamic-tool" || p.type.startsWith("tool-") ? i : -1))
+      .filter((i) => i >= 0);
+    const lastToolIdx = toolIndices[toolIndices.length - 1];
     return message.parts.map((part, i) => {
       const key = `${message.id}-${i}`;
       const partIsStreaming = isStreaming && isLast;
@@ -715,8 +719,9 @@ export function ChatPanel({
       if (part.type === "dynamic-tool" || part.type.startsWith("tool-")) {
         const tp = part as unknown as ToolPartLike;
         const rawName = tp.type === "dynamic-tool" ? tp.toolName ?? "tool" : tp.type.slice("tool-".length);
+        const isLastTool = i === lastToolIdx;
         return (
-          <Tool key={key} defaultOpen={false}>
+          <Tool key={key} defaultOpen={isLastTool && (tp.state === "output-available" || tp.state === "output-error" || partIsStreaming)}>
             <ToolHeader title={TOOL_TITLES[rawName] ?? rawName} type={tp.type as any} state={tp.state as any} toolName={tp.toolName} />
             <ToolContent>
               {tp.input != null && <ToolInput input={tp.input} />}
