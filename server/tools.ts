@@ -444,7 +444,7 @@ export const tools = {
     },
   }),
   saveFile: tool({
-    description: "Сохранить файл в рабочее пространство чата. Используй для сохранения сгенерированных HTML-страниц, скриптов, отчётов, CSV, JSON, Markdown и других файлов. После сохранения файла ты можешь открыть его в браузере через browserAgent navigate с URL file:// + filePath (например, browserAgent navigate=file:///C:/Users/.../portfolio.html).",
+    description: "Сохранить файл в рабочее пространство чата. Используй для сохранения сгенерированных HTML-страниц, скриптов, отчётов, CSV, JSON, Markdown и других файлов. После сохранения: (1) используй httpPath как ссылку для пользователя — она кликабельна; (2) используй filePath для browserAgent navigate с file:// — чтобы открыть в браузере.",
     inputSchema: z.object({
       filename: z.string().describe("Имя файла (например, report.html, script.js, data.csv)"),
       content: z.string().describe("Содержимое файла"),
