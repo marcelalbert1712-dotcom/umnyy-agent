@@ -1,5 +1,3 @@
-import { generateText } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
 import { tools, setCurrentChatId } from "./tools.ts";
 import { getFactStore } from "./user-facts.ts";
 import { getSettingsStore } from "./user-settings.ts";
@@ -14,20 +12,42 @@ const POLZAAI_BASE_URL =
 const POLZAAI_MODEL_RAW =
   process.env.POLZAAI_MODEL ?? "openai/gpt-4o-mini";
 const POLZAAI_PROVIDER = process.env.POLZAAI_PROVIDER ?? "OpenAI";
-
-function getPolzaClient() {
-  const apiKey = process.env.POLZAAI_API_KEY;
-  if (!apiKey) throw new Error("POLZAAI_API_KEY is required");
-  return createOpenAI({
-    baseURL: POLZAAI_BASE_URL,
-    apiKey,
-    name: "polzaai",
-  });
-}
+const POLZAAI_API_KEY = process.env.POLZAAI_API_KEY;
 
 const activeModel = POLZAAI_MODEL_RAW.includes("@")
   ? POLZAAI_MODEL_RAW
   : `${POLZAAI_MODEL_RAW}@provider=${POLZAAI_PROVIDER}&allow_fallbacks=false`;
+
+type ToolDef = {
+  name: string;
+  description: string;
+  inputSchema: unknown;
+  execute: (args: Record<string, unknown>) => Promise<unknown>;
+};
+
+// Собираем все инструменты в плоский список для raw API
+function getAllTools(): ToolDef[] {
+  return Object.entries(tools).map(([name, t]: [string, any]) => ({
+    name,
+    description: t.description ?? "",
+    inputSchema: t.parameters ?? {},
+    execute: async (args: Record<string, unknown>) => {
+      const res = await t.execute(args);
+      return res;
+    },
+  }));
+}
+
+function convertToolsForApi(toolDefs: ToolDef[]) {
+  return toolDefs.map((t) => ({
+    type: "function" as const,
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.inputSchema,
+    },
+  }));
+}
 
 export async function runBackgroundAgent(
   taskId: string,
@@ -47,15 +67,19 @@ export async function runBackgroundAgent(
 
   for (const cfg of settings.mcpServers) {
     if (cfg.enabled) {
-      try {
-        await connectMcpServer(cfg);
-      } catch (e) {
-        console.error(`[bg-agent] MCP ${cfg.name}:`, e);
-      }
+      try { await connectMcpServer(cfg); } catch (e) { console.error(`[bg-agent] MCP ${cfg.name}:`, e); }
     }
   }
-  const mcpAiTools = buildMcpAiTools();
-  const allTools = { ...tools, ...mcpAiTools };
+  const mcpTools = buildMcpAiTools();
+  const allToolDefs = [...getAllTools(), ...Object.entries(mcpTools).map(([name, t]: [string, any]) => ({
+    name,
+    description: t.description ?? "",
+    inputSchema: t.parameters ?? {},
+    execute: async (args: Record<string, unknown>) => {
+      const res = await t.execute(args);
+      return res;
+    },
+  }))];
 
   const store = await getFactStore();
   const facts = await store.list();
@@ -69,44 +93,125 @@ export async function runBackgroundAgent(
     fullSystem += `\n\n[Краткие саммари недавних диалогов]\n${memories.map((m) => `- [${m.title}] ${m.summary}`).join("\n")}`;
   }
 
-  const messages: import("ai").CoreMessage[] = [
+  const apiTools = convertToolsForApi(allToolDefs);
+  const toolMap = new Map(allToolDefs.map((t) => [t.name, t]));
+
+  const messages: Record<string, unknown>[] = [
     { role: "user", content: goal },
   ];
 
-  const abortController = new AbortController();
-  const timeout = setTimeout(() => {
-    console.log(`[bg-agent] task=${taskId} timeout (120s), aborting`);
-    abortController.abort();
-  }, 120_000);
+  let fullResponse = "";
+  const maxRounds = 10;
 
-  try {
-    const result = await generateText({
-      model: getPolzaClient().chat(activeModel),
-      system: fullSystem,
-      messages,
-      tools: allTools,
-      maxSteps: 12,
-      abortSignal: abortController.signal,
-      onStepFinish: async (step) => {
-        const text = (step.text || "").replace(/\n+/g, " ").slice(0, 150).trim();
-        const toolNames = (step.toolCalls || []).map((t) => t.toolName).join(", ");
-        const progress = text
-          ? `${text}${toolNames ? ` [tools: ${toolNames}]` : ""}`
-          : `Вызов: ${toolNames || "думаю..."}`;
-        console.log(`[bg-agent] task=${taskId} step progress: ${progress.slice(0, 80)}`);
-        await updateTask(taskId, { progress });
+  for (let round = 0; round < maxRounds; round++) {
+    // Уведомляем о прогрессе
+    await updateTask(taskId, { progress: `Раунд ${round + 1}/${maxRounds}...` });
+
+    const body = {
+      model: activeModel,
+      messages: [{ role: "system", content: fullSystem } as Record<string, unknown>, ...messages],
+      tools: apiTools.length > 0 ? apiTools : undefined,
+      max_tokens: 4096,
+      temperature: 0.3,
+    };
+
+    console.log(`[bg-agent] round ${round + 1}, calling API with ${messages.length} messages`);
+
+    const res = await fetch(`${POLZAAI_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${POLZAAI_API_KEY}`,
       },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
     });
 
-    console.log(`[bg-agent] task=${taskId} done, textLen=${result.text?.length ?? 0}`);
-    return result.text || "(пусто)";
-  } catch (err: any) {
-    if (err.name === "AbortError") {
-      throw new Error("Таймаут — агент не уложился в 120 секунд");
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`API error HTTP ${res.status}: ${errText.slice(0, 200)}`);
     }
-    console.error(`[bg-agent] task=${taskId} error:`, err);
-    throw err;
-  } finally {
-    clearTimeout(timeout);
+
+    const data = (await res.json()) as {
+      choices: Array<{
+        message: {
+          content?: string | null;
+          tool_calls?: Array<{
+            id: string;
+            type: string;
+            function: { name: string; arguments: string };
+          }>;
+        };
+        finish_reason: string;
+      }>;
+    };
+
+    const choice = data.choices?.[0];
+    if (!choice) throw new Error("No response from API");
+
+    const msg = choice.message;
+    const text = msg.content ?? "";
+    if (text) fullResponse += text + "\n";
+
+    console.log(`[bg-agent] round ${round + 1}, finish=${choice.finish_reason}, textLen=${text.length}, toolCalls=${msg.tool_calls?.length ?? 0}`);
+
+    // Добавляем ответ ассистента в историю
+    const assistantMsg: Record<string, unknown> = { role: "assistant", content: text || null };
+    if (msg.tool_calls) {
+      assistantMsg.tool_calls = msg.tool_calls;
+    }
+    messages.push(assistantMsg as any);
+
+    // Если нет tool_calls — задача выполнена
+    if (!msg.tool_calls || msg.tool_calls.length === 0) {
+      console.log(`[bg-agent] round ${round + 1} done, no more tool calls`);
+      break;
+    }
+
+    // Выполняем каждый tool
+    for (const tc of msg.tool_calls) {
+      const toolFn = toolMap.get(tc.function.name);
+      if (!toolFn) {
+        console.log(`[bg-agent] unknown tool: ${tc.function.name}`);
+        messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ error: `Unknown tool: ${tc.function.name}` }),
+        } as any);
+        continue;
+      }
+
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(tc.function.arguments);
+      } catch {
+        args = {};
+      }
+
+      console.log(`[bg-agent] executing tool: ${tc.function.name}`, args);
+      await updateTask(taskId, { progress: `Выполняю: ${tc.function.name}...` });
+
+      try {
+        const result = await toolFn.execute(args);
+        const resultStr = typeof result === "string" ? result : JSON.stringify(result);
+        console.log(`[bg-agent] tool ${tc.function.name} result: ${resultStr.slice(0, 100)}`);
+        messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: resultStr,
+        } as any);
+      } catch (err: any) {
+        console.error(`[bg-agent] tool ${tc.function.name} error:`, err);
+        messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ error: err.message ?? String(err) }),
+        } as any);
+      }
+    }
   }
+
+  const result = fullResponse.trim() || "(пусто)";
+  console.log(`[bg-agent] task=${taskId} final result length=${result.length}`);
+  return result;
 }
