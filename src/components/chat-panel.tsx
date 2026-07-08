@@ -1084,16 +1084,22 @@ export function ChatPanel({
             size="sm"
             type="button"
             onClick={() => {
-              if (!input.trim()) return;
+              const lastUser = messages.filter((m) => m.role === "user").pop();
+              const text = input.trim() || lastUser?.parts
+                .filter((p) => p.type === "text")
+                .map((p: any) => p.text)
+                .join(" ")
+                .trim();
+              if (!text) return;
               fetch("/api/tasks", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ chatId, goal: input.trim() }),
+                body: JSON.stringify({ chatId, goal: text }),
               });
               setInput("");
             }}
-            disabled={isStreaming || !input.trim()}
-            title="Запустить в фоне"
+            disabled={isStreaming || (!input.trim() && !messages.some((m) => m.role === "user"))}
+            title="Запустить текущий запрос в фоне (или последний, если поле пусто)"
           >
             <PlusIcon className="size-4" />
             В фон
