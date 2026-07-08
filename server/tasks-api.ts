@@ -55,7 +55,7 @@ export function tasksApiPlugin(): Plugin {
 
         // DELETE /api/tasks/:id — удалить задачу
         if (req.method === "DELETE") {
-          const id = req.url?.replace("/api/tasks/", "").split("?")[0];
+          const id = req.url?.replace(/^\//, "").split("?")[0];
           if (!id) {
             res.statusCode = 400;
             res.setHeader("Content-Type", "application/json");
@@ -76,19 +76,22 @@ export function tasksApiPlugin(): Plugin {
 
         // GET /api/tasks/:id — конкретная задача
         if (req.method === "GET") {
-          const match = req.url?.match(/^\/api\/tasks\/([^/]+)$/);
-          if (match) {
-            const id = match[1];
-            const task = await getTask(id);
-            if (!task) {
-              res.statusCode = 404;
+          const idMatch = req.url?.match(/^\/([^/?]+)/);
+          if (idMatch && idMatch[1]) {
+            const id = idMatch[1];
+            // Нет query-параметра chatId — значит это запрос одной задачи
+            if (!req.url?.includes("chatId=")) {
+              const task = await getTask(id);
+              if (!task) {
+                res.statusCode = 404;
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ error: "task not found" }));
+                return;
+              }
               res.setHeader("Content-Type", "application/json");
-              res.end(JSON.stringify({ error: "task not found" }));
+              res.end(JSON.stringify({ task }));
               return;
             }
-            res.setHeader("Content-Type", "application/json");
-            res.end(JSON.stringify({ task }));
-            return;
           }
         }
 
