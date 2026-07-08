@@ -1,6 +1,10 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { getOrCreatePage, closeChatSession } from "./browser-session";
+
+/** Текущий ID чата, устанавливается перед вызовом streamText */
+export let currentChatId = "default";
+export function setCurrentChatId(id: string) { currentChatId = id; }
 import { getFactStore } from "./user-facts.ts";
 
 /**
@@ -394,7 +398,7 @@ export const tools = {
     }),
     execute: async ({ action, url, x, y, text, dx, dy }) => {
       try {
-        const page = await getOrCreatePage("agent");
+        const page = await getOrCreatePage(currentChatId);
         let result: any;
         switch (action) {
           case "navigate":
@@ -427,7 +431,7 @@ export const tools = {
             break;
           }
           case "close":
-            await closeChatSession("agent");
+            await closeChatSession(currentChatId);
             result = { ok: true };
             break;
           default:
@@ -448,10 +452,10 @@ export const tools = {
     execute: async ({ filename, content }) => {
       const { promises: fs } = await import("node:fs");
       const path = await import("node:path");
-      const dir = path.join(process.cwd(), ".user-data", "workspace", "default");
+      const dir = path.join(process.cwd(), ".user-data", "workspace", currentChatId);
       await fs.mkdir(dir, { recursive: true });
       await fs.writeFile(path.join(dir, filename), content, "utf8");
-      return { ok: true, path: `/api/workspace/default/${filename}` };
+      return { ok: true, path: `/api/workspace/${currentChatId}/${filename}` };
     },
   }),
 };

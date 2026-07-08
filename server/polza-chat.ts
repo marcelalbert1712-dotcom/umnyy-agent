@@ -31,11 +31,14 @@ export function polzaaiChatPlugin(): Plugin {
           for await (const chunk of req) chunks.push(chunk as Buffer);
           const body = JSON.parse(
             Buffer.concat(chunks).toString("utf8"),
-          ) as { messages: UIMessage[] };
+          ) as { messages: UIMessage[]; id?: string };
 
           const response = await streamChatResponse(
             body.messages,
             controller.signal,
+            undefined,
+            undefined,
+            body.id,
           );
 
           res.statusCode = response.status;

@@ -8,7 +8,7 @@ export function BrowserPanel({ chatId }: { chatId: string }) {
   const [pageTitle, setPageTitle] = useState<string>("");
   const [pageUrl, setPageUrl] = useState<string>("");
   const [open, setOpen] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasEverLoaded = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -18,21 +18,22 @@ export function BrowserPanel({ chatId }: { chatId: string }) {
         body: JSON.stringify({ action: "screenshot" }),
       });
       const data = await res.json();
-      if (data.screenshot) setScreenshot(data.screenshot);
+      if (data.screenshot) {
+        setScreenshot(data.screenshot);
+        if (!hasEverLoaded.current) {
+          hasEverLoaded.current = true;
+          setOpen(true);
+        }
+      }
     } catch {
-      /* browser may not be active */
+      /* browser not active */
     }
   }, [chatId]);
 
   useEffect(() => {
-    if (open) {
-      refresh();
-      intervalRef.current = setInterval(refresh, 3000);
-    } else {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    }
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
-  }, [open, refresh]);
+    const id = setInterval(refresh, 3000);
+    return () => clearInterval(id);
+  }, [refresh]);
 
   return (
     <div className="border-t">
@@ -43,16 +44,10 @@ export function BrowserPanel({ chatId }: { chatId: string }) {
       >
         <GlobeIcon className="size-3.5" />
         <span className="flex-1 text-left">Браузер</span>
-        {pageTitle && <span className="truncate text-[10px] text-muted-foreground max-w-[100px]">{pageTitle}</span>}
+        {screenshot && <span className="size-1.5 rounded-full bg-green-500" title="Браузер активен" />}
       </button>
       {open && (
         <div className="px-2 pb-2">
-          {(pageUrl || pageTitle) && (
-            <div className="mb-1 flex items-center gap-1 rounded bg-muted px-2 py-1 text-[10px] text-muted-foreground">
-              <ExternalLinkIcon className="size-2.5 shrink-0" />
-              <span className="truncate">{pageTitle || pageUrl}</span>
-            </div>
-          )}
           {screenshot ? (
             <div className="relative">
               <img src={screenshot} alt="Browser screenshot" className="w-full rounded-lg border" />

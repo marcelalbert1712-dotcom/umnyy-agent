@@ -5,7 +5,7 @@ import {
   type UIMessage,
 } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
-import { tools } from "./tools.ts";
+import { tools, setCurrentChatId } from "./tools.ts";
 import { getFactStore } from "./user-facts.ts";
 import { getSettingsStore } from "./user-settings.ts";
 import { buildSystemPrompt } from "./presets.ts";
@@ -205,7 +205,9 @@ export async function streamChatResponse(
   abortSignal?: AbortSignal,
   customModel?: string,
   customTemperature?: number,
+  chatId?: string,
 ): Promise<Response> {
+  if (chatId) setCurrentChatId(chatId);
   const settingsStore = await getSettingsStore();
   const settings = await settingsStore.get();
   const system = buildSystemPrompt(

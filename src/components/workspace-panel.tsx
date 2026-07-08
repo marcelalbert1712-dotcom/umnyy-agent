@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { FolderOpenIcon, FileIcon, DownloadIcon, Trash2Icon, ExternalLinkIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 type FileEntry = {
   name: string;
@@ -13,22 +12,38 @@ type FileEntry = {
 export function WorkspacePanel({ chatId }: { chatId: string }) {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [open, setOpen] = useState(false);
+  const openOnce = useRef(false);
 
   const fetchFiles = useCallback(async () => {
     try {
       const res = await fetch(`/api/workspace/${encodeURIComponent(chatId)}`);
       const data = await res.json();
-      setFiles(data.files ?? []);
+      const list: FileEntry[] = data.files ?? [];
+      // also fetch default workspace
+      try {
+        const defRes = await fetch("/api/workspace/default");
+        const defData = await defRes.json();
+        for (const f of defData.files ?? []) {
+          if (!list.some((x) => x.name === f.name)) list.push(f);
+        }
+      } catch { /* ignore */ }
+      setFiles(list);
+      if (list.length > 0 && !openOnce.current) {
+        openOnce.current = true;
+        setOpen(true);
+      }
     } catch { /* ignore */ }
   }, [chatId]);
 
   useEffect(() => {
-    if (open) fetchFiles();
-  }, [open, fetchFiles]);
+    fetchFiles();
+    const id = setInterval(fetchFiles, 4000);
+    return () => clearInterval(id);
+  }, [fetchFiles]);
 
   const handleDelete = async (name: string) => {
     try {
-      await fetch(`/api/workspace/${encodeURIComponent(chatId)}/${encodeURIComponent(name)}`, { method: "DELETE" });
+      await fetch(`/api/workspace/default/${encodeURIComponent(name)}`, { method: "DELETE" });
       setFiles((prev) => prev.filter((f) => f.name !== name));
     } catch { /* ignore */ }
   };
@@ -55,7 +70,7 @@ export function WorkspacePanel({ chatId }: { chatId: string }) {
           ) : (
             files.map((f) => {
               const ext = f.name.split(".").pop()?.toUpperCase();
-              const fileUrl = `/api/workspace/${encodeURIComponent(chatId)}/${encodeURIComponent(f.name)}`;
+              const fileUrl = `/api/workspace/default/${encodeURIComponent(f.name)}`;
               return (
                 <div key={f.name} className="group flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs">
                   <FileIcon className="size-3 shrink-0 text-muted-foreground" />
