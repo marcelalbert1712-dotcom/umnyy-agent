@@ -25,12 +25,17 @@ function getPolzaClient() {
   });
 }
 
+const activeModel = POLZAAI_MODEL_RAW.includes("@")
+  ? POLZAAI_MODEL_RAW
+  : `${POLZAAI_MODEL_RAW}@provider=${POLZAAI_PROVIDER}&allow_fallbacks=false`;
+
 export async function runBackgroundAgent(
   taskId: string,
   chatId: string,
   goal: string,
 ): Promise<string> {
   setCurrentChatId(chatId);
+  console.log(`[bg-agent] starting task=${taskId} goal="${goal.slice(0, 80)}"`);
 
   const settingsStore = await getSettingsStore();
   const settings = await settingsStore.get();
@@ -56,10 +61,9 @@ export async function runBackgroundAgent(
   const facts = await store.list();
   const memories = await getRecentMemories(5);
 
-  // Добавляем факты и памяти в system prompt (не в messages — PolzaAI не любит system в messages + system параметр)
   let fullSystem = system;
   if (facts.length > 0) {
-    fullSystem += `\n\n[Известные факты о пользователе — используй для персонализации]\n${facts.map((f) => `- [${f.id}] ${f.text}`).join("\n")}`;
+    fullSystem += `\n\n[Известные факты о пользователе]\n${facts.map((f) => `- [${f.id}] ${f.text}`).join("\n")}`;
   }
   if (memories.length > 0) {
     fullSystem += `\n\n[Краткие саммари недавних диалогов]\n${memories.map((m) => `- [${m.title}] ${m.summary}`).join("\n")}`;
@@ -69,19 +73,40 @@ export async function runBackgroundAgent(
     { role: "user", content: goal },
   ];
 
-  const result = await generateText({
-    model: getPolzaClient().chat(
-      `${POLZAAI_MODEL_RAW}@provider=${POLZAAI_PROVIDER}&allow_fallbacks=false`,
-    ),
-    system: fullSystem,
-    messages,
-    tools: allTools,
-    maxSteps: 15,
-    onStepFinish: async (step) => {
-      const text = (step.text || "").replace(/\n+/g, " ").slice(0, 150).trim();
-      await updateTask(taskId, { progress: text || "Выполняется..." });
-    },
-  });
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => {
+    console.log(`[bg-agent] task=${taskId} timeout (120s), aborting`);
+    abortController.abort();
+  }, 120_000);
 
-  return result.text || "(пусто)";
+  try {
+    const result = await generateText({
+      model: getPolzaClient().chat(activeModel),
+      system: fullSystem,
+      messages,
+      tools: allTools,
+      maxSteps: 12,
+      abortSignal: abortController.signal,
+      onStepFinish: async (step) => {
+        const text = (step.text || "").replace(/\n+/g, " ").slice(0, 150).trim();
+        const toolNames = (step.toolCalls || []).map((t) => t.toolName).join(", ");
+        const progress = text
+          ? `${text}${toolNames ? ` [tools: ${toolNames}]` : ""}`
+          : `Вызов: ${toolNames || "думаю..."}`;
+        console.log(`[bg-agent] task=${taskId} step progress: ${progress.slice(0, 80)}`);
+        await updateTask(taskId, { progress });
+      },
+    });
+
+    console.log(`[bg-agent] task=${taskId} done, textLen=${result.text?.length ?? 0}`);
+    return result.text || "(пусто)";
+  } catch (err: any) {
+    if (err.name === "AbortError") {
+      throw new Error("Таймаут — агент не уложился в 120 секунд");
+    }
+    console.error(`[bg-agent] task=${taskId} error:`, err);
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
