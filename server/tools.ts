@@ -357,4 +357,26 @@ export const tools = {
       };
     },
   }),
+  runCode: tool({
+    description:
+      "Выполнить JavaScript-код на сервере. Полезно для: вычислений, анализа данных, сортировки, фильтрации, работы с JSON, генерации отчётов, создания таблиц и графиков (через console.table/log). Код выполняется в Node.js с таймаутом 15 сек. Используй console.log/table для вывода.",
+    inputSchema: z.object({
+      code: z.string().describe("JavaScript-код для выполнения"),
+    }),
+    execute: async ({ code }) => {
+      const { execSync } = await import("node:child_process");
+      try {
+        const result = execSync(`node -e ${JSON.stringify(code)}`, {
+          timeout: 15_000,
+          maxBuffer: 1024 * 100,
+          windowsHide: true,
+          encoding: "utf8",
+          env: { ...process.env, NODE_PATH: "" },
+        });
+        return { stdout: result.trim(), stderr: "" };
+      } catch (err: any) {
+        return { stdout: "", stderr: err.stderr ?? err.message ?? String(err) };
+      }
+    },
+  }),
 };

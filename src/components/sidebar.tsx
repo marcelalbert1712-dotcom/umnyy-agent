@@ -27,6 +27,7 @@ import type { ChatMeta } from "@/lib/chat-store";
 import type { UIMessage } from "ai";
 import { Logo } from "@/components/logo";
 import { CHAT_TEMPLATES } from "@/lib/presets";
+import { TaskPanel } from "@/components/task-panel";
 
 export type FolderDef = { id: string; name: string };
 
@@ -631,6 +632,7 @@ export function Sidebar({
         )}
       </div>
 
+      {activeId && <TaskPanel chatId={activeId} />}
       <div className="shrink-0 border-t p-3">
         <div className="flex items-center gap-2">
           <Button
