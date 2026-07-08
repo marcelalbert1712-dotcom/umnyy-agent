@@ -5,6 +5,7 @@ Manus-подобный агент: запуск кода, multi-agent плани
 
 ## Dev
 - http://localhost:5173/ (Vite)
+- **Важно**: используй короткий путь `C:\Users\!!!~1\Documents\OPENCO~1\umnyy-agent` вместо длинного с юникодом
 - React 19 + TypeScript + Vite + TailwindCSS, бэкенд Vite middleware + Netlify Functions
 - AI: PolzaAI, ключ в `.env`: `POLZAAI_API_KEY`
 - Git: `C:\Program Files\Git\bin\git.exe`

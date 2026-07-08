@@ -386,7 +386,7 @@ export const tools = {
   }),
   browserAgent: tool({
     description:
-      "Управление браузером. Доступные действия: navigate (перейти на URL — поддерживает http://, https://, file://), screenshot (сделать скриншот — возвращает data:image), click (клик по координатам x, y), type (ввод текста), scroll (прокрутка dx, dy), getText (получить текст страницы), close (закрыть сессию). Всегда делай screenshot после navigate чтобы увидеть страницу. После saveFile ты получишь filePath — используй его как navigate=file:///полный/путь",
+      "Управление браузером. Доступные действия: navigate (перейти на URL — http://, https://), screenshot (сделать скриншот — возвращает data:image), click (клик по координатам x, y), type (ввод текста), scroll (прокрутка dx, dy), getText (получить текст страницы), close (закрыть сессию). Всегда делай screenshot после navigate. Для открытия сохранённых файлов используй httpPath (например, http://localhost:5173/api/workspace/...)",
     inputSchema: z.object({
       action: z.enum(["navigate", "screenshot", "click", "type", "scroll", "getText", "close"]),
       url: z.string().optional().describe("URL для navigate"),
@@ -403,7 +403,10 @@ export const tools = {
         switch (action) {
           case "navigate":
             if (!url) throw new Error("url required");
-            await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+            await page.goto(url, {
+              waitUntil: url.startsWith("file://") ? "load" : "networkidle",
+              timeout: 30000,
+            });
             result = { title: await page.title(), url: page.url() };
             break;
           case "screenshot": {
@@ -444,7 +447,7 @@ export const tools = {
     },
   }),
   saveFile: tool({
-    description: "Сохранить файл в рабочее пространство чата. Используй для сохранения сгенерированных HTML-страниц, скриптов, отчётов, CSV, JSON, Markdown и других файлов. После сохранения: (1) используй httpPath как ссылку для пользователя — она кликабельна; (2) используй filePath для browserAgent navigate с file:// — чтобы открыть в браузере.",
+    description: "Сохранить файл в рабочее пространство чата. Используй для сохранения сгенерированных HTML-страниц, скриптов, отчётов, CSV, JSON, Markdown и других файлов. После сохранения используй httpPath как ссылку для пользователя И для открытия в браузере через browserAgent navigate с http://localhost:5173/api/workspace/...",
     inputSchema: z.object({
       filename: z.string().describe("Имя файла (например, report.html, script.js, data.csv)"),
       content: z.string().describe("Содержимое файла"),
