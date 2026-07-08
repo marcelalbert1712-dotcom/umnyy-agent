@@ -1,5 +1,5 @@
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, type UIMessage } from "ai";
+import { type UIMessage } from "ai";
 import {
   CheckCircle2Icon,
   CircleAlertIcon,
@@ -350,9 +350,9 @@ export function ChatPanel({
   const { messages, sendMessage, status, stop, error, regenerate, setMessages } =
     useChat({
       id: chatId,
-      transport: new DefaultChatTransport({ api: "/api/chat" }),
+      api: "/api/chat",
       messages: initialMessages,
-      experimental_throttle: 80,
+      throttle: 200,
       onError: (err) => {
         console.error("useChat error:", err);
       },
@@ -447,12 +447,14 @@ export function ChatPanel({
 
   // Оценка уверенности после завершения стриминга
   const prevStatusRef = useRef(status);
+  const scoredRef = useRef(new Set<string>());
   useEffect(() => {
     const prev = prevStatusRef.current;
     prevStatusRef.current = status;
     if (prev !== "ready" && status === "ready") {
       const lastMsg = messages[messages.length - 1];
-      if (lastMsg?.role === "assistant" && lastMsg.id && !confidenceScores[lastMsg.id]) {
+      if (lastMsg?.role === "assistant" && lastMsg.id && !scoredRef.current.has(lastMsg.id)) {
+        scoredRef.current.add(lastMsg.id);
         const text = lastMsg.parts.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("");
         if (text.trim()) {
           fetch("/api/evaluate-confidence", {
@@ -470,7 +472,7 @@ export function ChatPanel({
         }
       }
     }
-  }, [status, messages, confidenceScores]);
+  }, [status]);
 
   // Проактивность: подсказки при бездействии
   const lastActivityRef = useRef(Date.now());
