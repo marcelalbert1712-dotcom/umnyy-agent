@@ -11,12 +11,22 @@ export type FolderDef = {
   name: string;
 };
 
+export type ToolConfig = {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  enabled: boolean;
+};
+
 export type UserSettings = {
   preset: string;
   customPrompt: string;
   model: string;
   temperature: number | null;
   folders: FolderDef[];
+  mcpServers: ToolConfig[];
   updatedAt: number;
 };
 
@@ -26,6 +36,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   model: "",
   temperature: null,
   folders: [],
+  mcpServers: [],
   updatedAt: 0,
 };
 
@@ -53,6 +64,7 @@ async function readFile(): Promise<UserSettings> {
       model: data.model ?? DEFAULT_SETTINGS.model,
       temperature: data.temperature !== undefined ? data.temperature : DEFAULT_SETTINGS.temperature,
       folders: Array.isArray(data.folders) ? data.folders : DEFAULT_SETTINGS.folders,
+      mcpServers: Array.isArray(data.mcpServers) ? data.mcpServers : DEFAULT_SETTINGS.mcpServers,
       updatedAt: data.updatedAt ?? 0,
     };
   } catch {
@@ -83,6 +95,7 @@ export const fileSettingsStore: SettingsStore = {
       model: input.model !== undefined ? input.model : current.model,
       temperature: input.temperature !== undefined ? input.temperature : current.temperature,
       folders: Array.isArray(input.folders) ? input.folders : current.folders,
+      mcpServers: Array.isArray(input.mcpServers) ? input.mcpServers : current.mcpServers,
       updatedAt: Date.now(),
     };
     await writeFile(next);

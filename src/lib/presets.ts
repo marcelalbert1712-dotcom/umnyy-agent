@@ -52,11 +52,22 @@ export type UserFact = {
   createdAt: number;
 };
 
+export type ToolConfig = {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  enabled: boolean;
+};
+
 export type UserSettings = {
   preset: string;
   customPrompt: string;
   model: string;
   temperature: number | null;
+  folders?: Array<{ id: string; name: string }>;
+  mcpServers?: ToolConfig[];
   updatedAt: number;
 };
 

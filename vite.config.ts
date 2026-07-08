@@ -11,6 +11,9 @@ import { runCodePlugin } from "./server/run-code-api.ts";
 import { tasksApiPlugin } from "./server/tasks-api.ts";
 import { workspaceApiPlugin } from "./server/workspace-api.ts";
 import { browserApiPlugin } from "./server/browser-api.ts";
+import { summarizeApiPlugin } from "./server/summarize-api.ts";
+import { wsPlugin } from "./server/ws-server.ts";
+import { researchApiPlugin } from "./server/research-api.ts";
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -32,6 +35,9 @@ export default defineConfig(({ mode }) => {
       tasksApiPlugin(),
       workspaceApiPlugin(),
       browserApiPlugin(),
+      summarizeApiPlugin(),
+      wsPlugin(),
+      researchApiPlugin(),
     ],
     resolve: {
       alias: {

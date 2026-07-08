@@ -36,6 +36,7 @@ export async function handleSettingsRequest(
       preset?: string;
       customPrompt?: string;
       folders?: Array<{ id: string; name: string }>;
+      mcpServers?: Array<{ id: string; name: string; command: string; args: string[]; env?: Record<string, string>; enabled: boolean }>;
     }>(req);
     if (!body) return json(400, { error: "Invalid JSON body" });
     const patch: Partial<Omit<UserSettings, "updatedAt">> = {};
@@ -43,6 +44,7 @@ export async function handleSettingsRequest(
     if (typeof body.customPrompt === "string")
       patch.customPrompt = body.customPrompt;
     if (Array.isArray(body.folders)) patch.folders = body.folders;
+    if (Array.isArray(body.mcpServers)) patch.mcpServers = body.mcpServers;
     const settings = await store.save(patch);
     return json(200, { settings });
   }

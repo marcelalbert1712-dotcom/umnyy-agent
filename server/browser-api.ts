@@ -1,5 +1,6 @@
 import type { Plugin } from "vite";
 import { getOrCreatePage, closeChatSession } from "./browser-session";
+import { broadcastToChat } from "./ws-server";
 
 export function browserApiPlugin(): Plugin {
   return {
@@ -29,6 +30,18 @@ export function browserApiPlugin(): Plugin {
 
         const { action } = body;
 
+        // After relevant actions, take a screenshot and broadcast via WebSocket
+        const broadcastScreenshot = async () => {
+          try {
+            const page = await getOrCreatePage(chatId);
+            const shot = await page.screenshot({ type: "jpeg", quality: 60 });
+            broadcastToChat(chatId, {
+              type: "screenshot",
+              data: `data:image/jpeg;base64,${shot.toString("base64")}`,
+            });
+          } catch { /* ws broadcast is best-effort */ }
+        };
+
         try {
           const page = await getOrCreatePage(chatId);
           let result: any;
@@ -40,12 +53,14 @@ export function browserApiPlugin(): Plugin {
               await page.goto(targetUrl, { waitUntil: "networkidle", timeout: 30000 });
               const title = await page.title();
               result = { title, url: page.url() };
+              broadcastScreenshot();
               break;
             }
 
             case "screenshot": {
               const screenshot = await page.screenshot({ type: "jpeg", quality: 60 });
               result = { screenshot: `data:image/jpeg;base64,${screenshot.toString("base64")}` };
+              broadcastScreenshot();
               break;
             }
 
@@ -54,6 +69,7 @@ export function browserApiPlugin(): Plugin {
               if (x == null || y == null) throw new Error("x and y required");
               await page.mouse.click(x, y);
               result = { ok: true };
+              broadcastScreenshot();
               break;
             }
 
@@ -62,6 +78,7 @@ export function browserApiPlugin(): Plugin {
               if (text == null) throw new Error("text required");
               await page.keyboard.type(text, { delay: 20 });
               result = { ok: true };
+              broadcastScreenshot();
               break;
             }
 
@@ -69,6 +86,7 @@ export function browserApiPlugin(): Plugin {
               const { dx = 0, dy = 300 } = body;
               await page.evaluate(({ dx, dy }: { dx: number; dy: number }) => window.scrollBy(dx, dy), { dx, dy });
               result = { ok: true };
+              broadcastScreenshot();
               break;
             }
 

@@ -46,6 +46,7 @@ import {
 } from "@/lib/presets";
 import { pushAction } from "@/lib/action-log";
 import { downloadAsMarkdown, downloadAsText, openAsPdf } from "@/lib/export-chat";
+import { PlanPanel } from "@/components/plan-panel";
 
 const SUGGESTIONS = [
   {
@@ -280,6 +281,7 @@ export function ChatPanel({
   const historyRef = useRef<{ messages: UIMessage[]; ts: number }[]>([]);
   const [timeTravelIdx, setTimeTravelIdx] = useState<number | null>(null);
   const [focusMode, setFocusMode] = useState(false);
+  const [researchMode, setResearchMode] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState("");
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -454,6 +456,7 @@ export function ChatPanel({
         setShowHotkeys(false);
         setChatSearchQuery("");
         setEditingMsgId(null);
+        setFocusMode(false);
       }
     };
     window.addEventListener("keydown", handler);
@@ -562,11 +565,85 @@ export function ChatPanel({
   const handleSubmit = () => {
     const text = input.trim();
     if ((!text && files.length === 0) || !canSend) return;
+    if (researchMode) {
+      handleResearch(text);
+      return;
+    }
     const dt = new DataTransfer();
     for (const f of files) dt.items.add(f);
     sendMessage({ text, files: dt.files });
     setInput("");
     setFiles([]);
+  };
+
+  const [researchStatus, setResearchStatus] = useState<string>("");
+  const handleResearch = async (query: string) => {
+    if (!query) return;
+    setInput("");
+    setResearchMode(false);
+    setResearchStatus("Исследую…");
+
+    const placeholderId = `research_${Date.now()}`;
+    const loadingMsg: any = {
+      id: placeholderId,
+      role: "assistant",
+      parts: [{ type: "text", text: `*Исследую:* ${query}\n\n⏳ Исследую…` }],
+    };
+
+    sendMessage({ text: query });
+
+    setTimeout(async () => {
+      setMessages((prev) => [...prev, loadingMsg]);
+      try {
+        const res = await fetch("/api/research", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+          signal: AbortSignal.timeout(120_000),
+        });
+        if (!res.ok) {
+          const err = await res.text();
+          setMessages((prev) =>
+            prev.map((m: any) =>
+              m.id === placeholderId
+                ? { ...m, parts: [{ type: "text", text: `❌ Ошибка: ${err}` }] }
+                : m,
+            ),
+          );
+          return;
+        }
+        const data = await res.json();
+        if (data.error) {
+          setMessages((prev) =>
+            prev.map((m: any) =>
+              m.id === placeholderId
+                ? { ...m, parts: [{ type: "text", text: `❌ ${data.error}` }] }
+                : m,
+            ),
+          );
+          return;
+        }
+        const sources = data.sources?.length
+          ? `\n\n---\n*Источники:*\n${data.sources.map((s: string) => `- ${s}`).join("\n")}`
+          : "";
+        const fullText = data.report + sources;
+        setMessages((prev) =>
+          prev.map((m: any) =>
+            m.id === placeholderId
+              ? { ...m, parts: [{ type: "text", text: fullText }] }
+              : m,
+          ),
+        );
+      } catch (err: any) {
+        setMessages((prev) =>
+          prev.map((m: any) =>
+            m.id === placeholderId
+              ? { ...m, parts: [{ type: "text", text: `❌ Ошибка: ${err.message ?? String(err)}` }] }
+              : m,
+          ),
+        );
+      }
+    }, 100);
   };
 
   const handleSuggestion = (prompt: string) => {
@@ -579,6 +656,41 @@ export function ChatPanel({
     setMessages([]);
     onClearChat(chatId);
     pushAction({ type: "clear", detail: `Очищен чат «${title}» (${count} сообщений)` });
+  };
+
+  const [compressing, setCompressing] = useState(false);
+  const handleCompress = async () => {
+    if (messages.length < 4) return;
+    setCompressing(true);
+    const keep = 2;
+    const old = messages.slice(0, -keep);
+    const recent = messages.slice(-keep);
+    try {
+      const res = await fetch("/api/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: old.map((m) => ({
+            role: m.role,
+            text: m.parts.filter((p) => p.type === "text").map((p: any) => p.text).join(" "),
+          })),
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const summary = data.summary || "(пусто)";
+      const summaryMsg = {
+        id: `summary_${Date.now()}`,
+        role: "assistant" as const,
+        parts: [{ type: "text" as const, text: `*Сжатая история:* ${summary}` }],
+      } as any;
+      setMessages([summaryMsg, ...recent]);
+      pushAction({ type: "compress", detail: `Сжато ${old.length} сообщений` });
+    } catch (err) {
+      console.error("Compress error:", err);
+    } finally {
+      setCompressing(false);
+    }
   };
 
   // ── Favorites ─────────────────────────────────────────────────
@@ -721,7 +833,7 @@ export function ChatPanel({
         const rawName = tp.type === "dynamic-tool" ? tp.toolName ?? "tool" : tp.type.slice("tool-".length);
         const isLastTool = i === lastToolIdx;
         return (
-          <Tool key={key} defaultOpen={isLastTool && (tp.state === "output-available" || tp.state === "output-error" || partIsStreaming)}>
+          <Tool key={key} defaultOpen={false}>
             <ToolHeader title={TOOL_TITLES[rawName] ?? rawName} type={tp.type as any} state={tp.state as any} toolName={tp.toolName} />
             <ToolContent>
               {tp.input != null && <ToolInput input={tp.input} />}
@@ -954,8 +1066,30 @@ export function ChatPanel({
             <EraserIcon className="size-4" />
             Очистить
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            onClick={handleCompress}
+            disabled={messages.length < 4 || compressing}
+            title="Сжать историю — заменить старые сообщения кратким саммари"
+          >
+            {compressing ? "Сжатие…" : "Сжать историю"}
+          </Button>
           </>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            onClick={() => setResearchMode((v) => !v)}
+            disabled={isStreaming}
+            className={researchMode ? "text-primary" : ""}
+            title={researchMode ? "Выйти из исследования" : "Режим исследования"}
+          >
+            <SearchIcon className="size-4" />
+            Research
+          </Button>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -968,6 +1102,13 @@ export function ChatPanel({
           </Button>
         </div>
       </header>
+      )}
+
+      {researchMode && (
+        <div className="flex items-center gap-2 border-b bg-primary/5 px-4 py-2 text-xs text-primary">
+          <SearchIcon className="size-3.5 shrink-0" />
+          <span>Режим глубокого исследования. Агент выполнит несколько поисков, прочитает статьи и сформирует развёрнутый отчёт.</span>
+        </div>
       )}
 
       {timeTravelIdx !== null && (
@@ -1007,6 +1148,8 @@ export function ChatPanel({
           </button>
         </div>
       )}
+
+      <PlanPanel messages={displayMessages} />
 
       <Conversation>
         <ConversationContent className="mx-auto w-full max-w-3xl gap-6 px-4">

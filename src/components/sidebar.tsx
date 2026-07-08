@@ -715,7 +715,7 @@ export function Sidebar({
       </div>
 
       {activeId && <WorkspacePanel chatId={activeId} />}
-      {activeId && <TaskPanel chatId={activeId} />}
+      {activeId && <TaskPanel chatId={activeId} onInsertResult={(text) => { /* can be wired up */ }} />}
       {activeId && <BrowserPanel chatId={activeId} />}
       <div className="shrink-0 border-t p-3">
         <div className="flex items-center gap-2">

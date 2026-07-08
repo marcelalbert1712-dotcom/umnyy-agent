@@ -5,6 +5,7 @@ import {
   HistoryIcon,
   LoaderIcon,
   PencilIcon,
+  PlugIcon,
   PlusIcon,
   SaveIcon,
   Trash2Icon,
@@ -21,6 +22,7 @@ import {
   AVAILABLE_MODELS,
   type UserFact,
   type UserSettings,
+  type ToolConfig,
 } from "@/lib/presets";
 import { getLog, clearLog, type Action } from "@/lib/action-log";
 
@@ -35,7 +37,7 @@ const CATEGORIES: FactCategory[] = [
   "other",
 ];
 
-type View = "facts" | "character" | "log";
+type View = "facts" | "character" | "mcp" | "log";
 
 export type AdminPanelProps = {
   onBack: () => void;
@@ -61,13 +63,20 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
             active={view === "facts"}
             onClick={() => setView("facts")}
           >
-            Факты обо мне
+            Факты
           </TabButton>
           <TabButton
             active={view === "character"}
             onClick={() => setView("character")}
           >
-            Характер агента
+            Характер
+          </TabButton>
+          <TabButton
+            active={view === "mcp"}
+            onClick={() => setView("mcp")}
+          >
+            <PlugIcon className="size-3.5" />
+            MCP
           </TabButton>
           <TabButton
             active={view === "log"}
@@ -85,6 +94,8 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
             <FactsSection />
           ) : view === "character" ? (
             <CharacterSection />
+          ) : view === "mcp" ? (
+            <McpSection />
           ) : (
             <LogSection />
           )}
@@ -716,5 +727,224 @@ function LogSection() {
         </ul>
       )}
     </section>
+  );
+}
+
+// ── MCP-серверы ──────────────────────────────────────────────────────────────
+
+const DEFAULT_MCP: ToolConfig = {
+  id: "",
+  name: "",
+  command: "",
+  args: [],
+  enabled: true,
+};
+
+function McpSection() {
+  const [servers, setServers] = useState<ToolConfig[] | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings");
+      if (res.ok) {
+        const data = await res.json();
+        setServers(data.settings?.mcpServers ?? []);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  const saveServers = async (updated: ToolConfig[]) => {
+    try {
+      await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mcpServers: updated }),
+      });
+      setServers(updated);
+    } catch { /* ignore */ }
+  };
+
+  const handleToggle = async (id: string) => {
+    if (!servers) return;
+    const updated = servers.map((s) => s.id === id ? { ...s, enabled: !s.enabled } : s);
+    await saveServers(updated);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!servers) return;
+    const updated = servers.filter((s) => s.id !== id);
+    await saveServers(updated);
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold">MCP-серверы</h2>
+        <p className="text-sm text-muted-foreground">
+          Подключите внешние инструменты через Model Context Protocol.
+          Серверы запускаются при каждом запросе к агенту.
+        </p>
+      </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => setAdding((v) => !v)}
+      >
+        <PlusIcon className="size-4" />
+        {adding ? "Отмена" : "Добавить MCP-сервер"}
+      </Button>
+
+      {adding && (
+        <McpForm
+          onSaved={(cfg) => {
+            setAdding(false);
+            const updated = [...(servers ?? []), cfg];
+            void saveServers(updated);
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
+
+      {(!servers || servers.length === 0) ? (
+        <p className="rounded-lg border border-dashed bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
+          Нет подключённых MCP-серверов.
+          <br />
+          Добавьте сервер, например:{" "}
+          <code className="text-xs">npx -y @modelcontextprotocol/server-filesystem /путь/к/папке</code>
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {servers.map((srv) =>
+            editingId === srv.id ? (
+              <li key={srv.id}>
+                <McpForm
+                  initial={srv}
+                  onSaved={(updated) => {
+                    setEditingId(null);
+                    const updatedList = servers.map((s) => s.id === updated.id ? updated : s);
+                    void saveServers(updatedList);
+                  }}
+                  onCancel={() => setEditingId(null)}
+                />
+              </li>
+            ) : (
+              <li
+                key={srv.id}
+                className="flex items-center gap-3 rounded-lg border bg-card p-3"
+              >
+                <button
+                  type="button"
+                  onClick={() => handleToggle(srv.id)}
+                  className={cn(
+                    "flex size-6 items-center justify-center rounded border text-xs font-bold",
+                    srv.enabled
+                      ? "border-green-500 bg-green-500/10 text-green-600"
+                      : "border-muted-foreground/30 text-muted-foreground/50",
+                  )}
+                  title={srv.enabled ? "Отключить" : "Включить"}
+                >
+                  {srv.enabled ? <CheckIcon className="size-3" /> : <XIcon className="size-3" />}
+                </button>
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <p className="text-sm font-medium">{srv.name}</p>
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    <code>{srv.command} {srv.args?.join(" ")}</code>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Редактировать"
+                  onClick={() => setEditingId(srv.id)}
+                  className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <PencilIcon className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Удалить"
+                  onClick={() => handleDelete(srv.id)}
+                  className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <Trash2Icon className="size-4" />
+                </button>
+              </li>
+            ),
+          )}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function McpForm({
+  initial,
+  onSaved,
+  onCancel,
+}: {
+  initial?: ToolConfig;
+  onSaved: (cfg: ToolConfig) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [command, setCommand] = useState(initial?.command ?? "");
+  const [argsStr, setArgsStr] = useState(initial?.args?.join(" ") ?? "");
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = () => {
+    if (!name.trim() || !command.trim()) {
+      setErr("Название и команда обязательны");
+      return;
+    }
+    const args = argsStr.trim() ? argsStr.trim().split(/\s+/) : [];
+    const cfg: ToolConfig = {
+      id: initial?.id ?? `mcp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      name: name.trim(),
+      command: command.trim(),
+      args,
+      enabled: initial?.enabled ?? true,
+    };
+    onSaved(cfg);
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-card p-3">
+      <div className="space-y-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Название (например: Файловая система)"
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+        <input
+          value={command}
+          onChange={(e) => setCommand(e.target.value)}
+          placeholder="Команда (например: npx)"
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+        <input
+          value={argsStr}
+          onChange={(e) => setArgsStr(e.target.value)}
+          placeholder="Аргументы (через пробел, например: -y @modelcontextprotocol/server-filesystem /путь)"
+          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        />
+      </div>
+      {err && <p className="text-xs text-destructive">{err}</p>}
+      <div className="flex items-center gap-2">
+        <Button type="button" size="sm" onClick={submit}>
+          <SaveIcon className="size-4" />
+          Сохранить
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
+          <XIcon className="size-4" />
+          Отмена
+        </Button>
+      </div>
+    </div>
   );
 }

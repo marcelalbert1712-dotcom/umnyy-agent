@@ -16,7 +16,7 @@ import {
   WrenchIcon,
   XCircleIcon,
 } from "lucide-react";
-import type { ComponentProps, ReactNode } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { isValidElement } from "react";
 
 import { CodeBlock } from "./code-block";
@@ -116,16 +116,26 @@ export type ToolInputProps = ComponentProps<"div"> & {
   input: ToolPart["input"];
 };
 
-export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
-  <div className={cn("space-y-2 overflow-hidden", className)} {...props}>
-    <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
-      Parameters
-    </h4>
-    <div className="rounded-md bg-muted/50">
-      <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
+export const ToolInput = ({ className, input, ...props }: ToolInputProps) => {
+  const [show, setShow] = useState(false);
+  return (
+    <div className={cn("space-y-2 overflow-hidden", className)} {...props}>
+      <button
+        type="button"
+        onClick={() => setShow((v) => !v)}
+        className="flex items-center gap-1 text-muted-foreground text-xs uppercase tracking-wide hover:text-foreground"
+      >
+        <ChevronDownIcon className={cn("size-3 transition-transform", show && "rotate-180")} />
+        Параметры
+      </button>
+      {show && (
+        <div className="rounded-md bg-muted/50">
+          <CodeBlock code={JSON.stringify(input, null, 2)} language="json" />
+        </div>
+      )}
     </div>
-  </div>
-);
+  );
+};
 
 export type ToolOutputProps = ComponentProps<"div"> & {
   output: ToolPart["output"];
