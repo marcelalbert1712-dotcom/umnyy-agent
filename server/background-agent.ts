@@ -6,6 +6,7 @@ import { getSettingsStore } from "./user-settings.ts";
 import { buildSystemPrompt } from "./presets.ts";
 import { connectMcpServer, buildMcpAiTools } from "./mcp-manager";
 import { updateTask } from "./task-queue.ts";
+import { getRecentMemories } from "./session-memory.ts";
 import { SYSTEM_PROMPT } from "./polza-client.ts";
 
 const POLZAAI_BASE_URL =
@@ -53,22 +54,26 @@ export async function runBackgroundAgent(
 
   const store = await getFactStore();
   const facts = await store.list();
+  const memories = await getRecentMemories(5);
+
+  // Добавляем факты и памяти в system prompt (не в messages — PolzaAI не любит system в messages + system параметр)
+  let fullSystem = system;
+  if (facts.length > 0) {
+    fullSystem += `\n\n[Известные факты о пользователе — используй для персонализации]\n${facts.map((f) => `- [${f.id}] ${f.text}`).join("\n")}`;
+  }
+  if (memories.length > 0) {
+    fullSystem += `\n\n[Краткие саммари недавних диалогов]\n${memories.map((m) => `- [${m.title}] ${m.summary}`).join("\n")}`;
+  }
 
   const messages: import("ai").CoreMessage[] = [
     { role: "user", content: goal },
   ];
-  if (facts.length > 0) {
-    messages.push({
-      role: "system",
-      content: `[Известные факты о пользователе — используй для персонализации]\n${facts.map((f) => `- [${f.id}] ${f.text}`).join("\n")}`,
-    });
-  }
 
   const result = await generateText({
     model: getPolzaClient().chat(
       `${POLZAAI_MODEL_RAW}@provider=${POLZAAI_PROVIDER}&allow_fallbacks=false`,
     ),
-    system,
+    system: fullSystem,
     messages,
     tools: allTools,
     maxSteps: 15,
