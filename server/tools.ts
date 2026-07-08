@@ -161,6 +161,7 @@ export const tools = {
     execute: async ({ query }) => {
       const res = await fetch("https://html.duckduckgo.com/html/", {
         method: "POST",
+        redirect: "manual",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           "User-Agent": "Mozilla/5.0",
