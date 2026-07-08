@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { getOrCreatePage, closeChatSession } from "./browser-session";
 import { getFactStore } from "./user-facts.ts";
 
 /**
@@ -377,6 +378,80 @@ export const tools = {
       } catch (err: any) {
         return { stdout: "", stderr: err.stderr ?? err.message ?? String(err) };
       }
+    },
+  }),
+  browserAgent: tool({
+    description:
+      "Управление браузером. Доступные действия: navigate (перейти на URL), screenshot (сделать скриншот — возвращает data:image), click (клик по координатам x, y), type (ввод текста), scroll (прокрутка dx, dy), getText (получить текст страницы), close (закрыть сессию). Всегда делай screenshot после navigate чтобы увидеть страницу.",
+    inputSchema: z.object({
+      action: z.enum(["navigate", "screenshot", "click", "type", "scroll", "getText", "close"]),
+      url: z.string().optional().describe("URL для navigate"),
+      x: z.number().optional().describe("координата X для click"),
+      y: z.number().optional().describe("координата Y для click"),
+      text: z.string().optional().describe("текст для type"),
+      dx: z.number().optional().describe("прокрутка по X"),
+      dy: z.number().optional().describe("прокрутка по Y (по умолчанию 300)"),
+    }),
+    execute: async ({ action, url, x, y, text, dx, dy }) => {
+      try {
+        const page = await getOrCreatePage("agent");
+        let result: any;
+        switch (action) {
+          case "navigate":
+            if (!url) throw new Error("url required");
+            await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
+            result = { title: await page.title(), url: page.url() };
+            break;
+          case "screenshot": {
+            const screenshot = await page.screenshot({ type: "jpeg", quality: 60 });
+            result = { screenshot: `data:image/jpeg;base64,${screenshot.toString("base64")}` };
+            break;
+          }
+          case "click":
+            if (x == null || y == null) throw new Error("x and y required");
+            await page.mouse.click(x, y);
+            result = { ok: true };
+            break;
+          case "type":
+            if (text == null) throw new Error("text required");
+            await page.keyboard.type(text, { delay: 20 });
+            result = { ok: true };
+            break;
+          case "scroll":
+            await page.evaluate(({ dx, dy }: { dx: number; dy: number }) => window.scrollBy(dx, dy), { dx: dx ?? 0, dy: dy ?? 300 });
+            result = { ok: true };
+            break;
+          case "getText": {
+            const t = await page.evaluate(() => document.body?.innerText ?? "");
+            result = { text: t.slice(0, 10000) };
+            break;
+          }
+          case "close":
+            await closeChatSession("agent");
+            result = { ok: true };
+            break;
+          default:
+            throw new Error(`Unknown action: ${action}`);
+        }
+        return result;
+      } catch (err: any) {
+        return { error: err.message || String(err) };
+      }
+    },
+  }),
+  saveFile: tool({
+    description: "Сохранить файл в рабочее пространство чата. Используй для сохранения сгенерированных HTML-страниц, скриптов, отчётов, CSV, JSON, Markdown и других файлов. Файл будет доступен в боковой панели «Файлы».",
+    inputSchema: z.object({
+      filename: z.string().describe("Имя файла (например, report.html, script.js, data.csv)"),
+      content: z.string().describe("Содержимое файла"),
+    }),
+    execute: async ({ filename, content }) => {
+      const { promises: fs } = await import("node:fs");
+      const path = await import("node:path");
+      const dir = path.join(process.cwd(), ".user-data", "workspace", "default");
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, filename), content, "utf8");
+      return { ok: true, path: `/api/workspace/default/${filename}` };
     },
   }),
 };

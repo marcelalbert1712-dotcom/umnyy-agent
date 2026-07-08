@@ -28,6 +28,8 @@ import type { UIMessage } from "ai";
 import { Logo } from "@/components/logo";
 import { CHAT_TEMPLATES } from "@/lib/presets";
 import { TaskPanel } from "@/components/task-panel";
+import { WorkspacePanel } from "@/components/workspace-panel";
+import { BrowserPanel } from "@/components/browser-panel";
 
 export type FolderDef = { id: string; name: string };
 
@@ -632,7 +634,9 @@ export function Sidebar({
         )}
       </div>
 
+      {activeId && <WorkspacePanel chatId={activeId} />}
       {activeId && <TaskPanel chatId={activeId} />}
+      {activeId && <BrowserPanel chatId={activeId} />}
       <div className="shrink-0 border-t p-3">
         <div className="flex items-center gap-2">
           <Button
