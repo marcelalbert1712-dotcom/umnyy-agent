@@ -35,7 +35,19 @@ async function save() {
 }
 
 // Init
-load();
+load().then(() => {
+  // Сброс зависших задач (не завершились при прошлом запуске)
+  let changed = false;
+  for (const t of tasks) {
+    if (t.status === "pending" || t.status === "running") {
+      t.status = "error";
+      t.error = "Сервер был перезапущен";
+      t.updatedAt = Date.now();
+      changed = true;
+    }
+  }
+  if (changed) save();
+});
 
 export async function createTask(chatId: string, goal: string): Promise<Task> {
   const task: Task = {
