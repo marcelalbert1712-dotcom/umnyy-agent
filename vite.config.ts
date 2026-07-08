@@ -7,6 +7,7 @@ import { chatsApiPlugin } from "./server/chats-api.ts";
 import { adminApiPlugin } from "./server/admin-api.ts";
 import { transcribeApiPlugin } from "./server/transcribe-api.ts";
 import { evaluateConfidencePlugin } from "./server/evaluate-confidence.ts";
+import { runCodePlugin } from "./server/run-code-api.ts";
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -24,6 +25,7 @@ export default defineConfig(({ mode }) => {
       adminApiPlugin(),
       transcribeApiPlugin(),
       evaluateConfidencePlugin(),
+      runCodePlugin(),
     ],
     resolve: {
       alias: {

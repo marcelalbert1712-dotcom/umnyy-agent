@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { cn } from "@/lib/utils";
+import { CodeBlock } from "./code-block";
 
 function SvgBlock({ code }: { code: string }) {
   const sanitized = code.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "");
@@ -158,6 +159,9 @@ export const MessageResponse = memo(function MessageResponse({
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
         components={{
+          pre({ children }) {
+            return <>{children}</>;
+          },
           code({ className: codeClassName, children, ...props }) {
             const lang = codeClassName?.replace("language-", "") ?? "";
             if (lang === "svg") {
@@ -165,6 +169,9 @@ export const MessageResponse = memo(function MessageResponse({
             }
             if (lang === "mermaid") {
               return <MermaidBlock code={String(children)} />;
+            }
+            if (lang) {
+              return <CodeBlock language={lang} code={String(children)} />;
             }
             return <code className={codeClassName} {...props}>{children}</code>;
           },
