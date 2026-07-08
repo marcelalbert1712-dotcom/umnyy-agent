@@ -386,7 +386,7 @@ export const tools = {
   }),
   browserAgent: tool({
     description:
-      "Управление браузером. Доступные действия: navigate (перейти на URL), screenshot (сделать скриншот — возвращает data:image), click (клик по координатам x, y), type (ввод текста), scroll (прокрутка dx, dy), getText (получить текст страницы), close (закрыть сессию). Всегда делай screenshot после navigate чтобы увидеть страницу.",
+      "Управление браузером. Доступные действия: navigate (перейти на URL — поддерживает http://, https://, file://), screenshot (сделать скриншот — возвращает data:image), click (клик по координатам x, y), type (ввод текста), scroll (прокрутка dx, dy), getText (получить текст страницы), close (закрыть сессию). Всегда делай screenshot после navigate чтобы увидеть страницу. После saveFile ты получишь filePath — используй его как navigate=file:///полный/путь",
     inputSchema: z.object({
       action: z.enum(["navigate", "screenshot", "click", "type", "scroll", "getText", "close"]),
       url: z.string().optional().describe("URL для navigate"),
@@ -444,7 +444,7 @@ export const tools = {
     },
   }),
   saveFile: tool({
-    description: "Сохранить файл в рабочее пространство чата. Используй для сохранения сгенерированных HTML-страниц, скриптов, отчётов, CSV, JSON, Markdown и других файлов. Файл будет доступен в боковой панели «Файлы».",
+    description: "Сохранить файл в рабочее пространство чата. Используй для сохранения сгенерированных HTML-страниц, скриптов, отчётов, CSV, JSON, Markdown и других файлов. После сохранения файла ты можешь открыть его в браузере через browserAgent navigate с URL file:// + filePath (например, browserAgent navigate=file:///C:/Users/.../portfolio.html).",
     inputSchema: z.object({
       filename: z.string().describe("Имя файла (например, report.html, script.js, data.csv)"),
       content: z.string().describe("Содержимое файла"),
@@ -454,8 +454,9 @@ export const tools = {
       const path = await import("node:path");
       const dir = path.join(process.cwd(), ".user-data", "workspace", currentChatId);
       await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(path.join(dir, filename), content, "utf8");
-      return { ok: true, path: `/api/workspace/${currentChatId}/${filename}` };
+      const filePath = path.join(dir, filename);
+      await fs.writeFile(filePath, content, "utf8");
+      return { ok: true, filePath, httpPath: `/api/workspace/${currentChatId}/${filename}` };
     },
   }),
 };
