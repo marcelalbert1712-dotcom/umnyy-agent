@@ -159,6 +159,9 @@ export const MessageResponse = memo(function MessageResponse({
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
         components={{
+          a({ href, children, ...props }) {
+            return <a href={href} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>;
+          },
           pre({ children }) {
             return <>{children}</>;
           },
