@@ -1,0 +1,18 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  # Сигнал для серверного кода: использовать Netlify Blobs (а не файлы).
+  USE_BLOBS = "true"
+
+[functions]
+  node_bundler = "esbuild"
+
+# SPA: все неизвестные маршруты отдаём index.html (фронтенд-роутинг).
+# Маршруты /api/* обрабатываются Netlify Functions (path-конфиг имеет приоритет).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
