@@ -818,7 +818,7 @@ export function ChatPanel({
 
       if (part.type === "text") {
         if (!part.text) return null;
-        return <MessageResponse key={key} content={part.text} highlight={chatSearchQuery || undefined} />;
+        return <CollapsibleText key={key} text={part.text} highlight={chatSearchQuery || undefined} />;
       }
 
       if (part.type === "reasoning") {
@@ -1624,6 +1624,26 @@ export function ChatPanel({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** Сворачивает длинный текст (>1000 символов) с кнопкой Развернуть/Свернуть */
+function CollapsibleText({ text, highlight }: { text: string; highlight?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  if (text.length <= 1000) {
+    return <MessageResponse content={text} highlight={highlight} />;
+  }
+  return (
+    <div>
+      <MessageResponse content={expanded ? text : text.slice(0, 800) + "…"} highlight={highlight} />
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="mt-1 text-xs text-muted-foreground hover:text-foreground underline"
+      >
+        {expanded ? "Свернуть" : `Развернуть (ещё ${text.length - 800} символов)`}
+      </button>
     </div>
   );
 }

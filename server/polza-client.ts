@@ -120,6 +120,7 @@ function uiMessagesToCoreMessages(messages: UIMessage[]): ModelMessage[] {
       const content: Array<
         | { type: "text"; text: string }
         | { type: "file"; data: string; mediaType: string; filename?: string }
+        | { type: "image"; image: string }
       > = [];
       for (const part of msg.parts) {
         if (part.type === "text" && (part as { text: string }).text) {
@@ -127,12 +128,15 @@ function uiMessagesToCoreMessages(messages: UIMessage[]): ModelMessage[] {
         } else if (part.type === "file") {
           const url = (part as { url: string }).url;
           const isDataUrl = typeof url === "string" && url.startsWith("data:");
-          content.push({
-            type: "file",
-            mediaType: normalizeMediaType((part as { mediaType: string }).mediaType),
-            filename: (part as { filename?: string }).filename,
-            data: isDataUrl ? stripDataUrlPrefix(url) : url,
-          });
+          const mediaType = normalizeMediaType((part as { mediaType: string }).mediaType);
+          const data = isDataUrl ? stripDataUrlPrefix(url) : url;
+          // Image → vision format для AI
+          if (mediaType.startsWith("image/")) {
+            const imageUrl = isDataUrl ? url : `data:${mediaType};base64,${data}`;
+            content.push({ type: "image", image: imageUrl });
+          } else {
+            content.push({ type: "file", mediaType, filename: (part as { filename?: string }).filename, data });
+          }
         }
       }
       result.push({ role: "user", content });

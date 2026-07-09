@@ -14,6 +14,7 @@ import { browserApiPlugin } from "./server/browser-api.ts";
 import { summarizeApiPlugin } from "./server/summarize-api.ts";
 import { wsPlugin } from "./server/ws-server.ts";
 import { researchApiPlugin } from "./server/research-api.ts";
+import { uploadApiPlugin } from "./server/upload-api.ts";
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -39,6 +40,7 @@ export default defineConfig(({ mode }) => {
       summarizeApiPlugin(),
       wsPlugin(),
       researchApiPlugin(),
+      uploadApiPlugin(),
     ],
     resolve: {
       alias: {
