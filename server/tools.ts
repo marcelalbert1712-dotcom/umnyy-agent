@@ -560,12 +560,33 @@ function htmlToText(html: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#\d{2,4};/g, " ")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 3000);
+    .trim();
 }
 
-/** Прочитать содержимое URL и извлечь текст */
-async function tryReadUrl(url: string): Promise<string | null> {
+/** Извлечь число-цену из текста */
+function extractPrice(text: string): string | null {
+  // Приоритет: ищем цену рядом со словом Price/price/Цена/цена
+  const nearPriceRegex = /(?:Price|price|Цена|цена)\s*[:•]?\s*\$(\d{1,3}(?:,\d{3})*(?:\.\d{1,6})?)/g;
+  const nearMatches = [...text.matchAll(nearPriceRegex)];
+  if (nearMatches.length > 0) {
+    return `$${nearMatches[0][1]}`;
+  }
+  // Fallback: любое $число, где значение правдоподобно для цены (0.0001–999,999)
+  const anyPriceRegex = /\$(\d{1,3}(?:,\d{3})*(?:\.\d{1,6})?)\s*(?!B|M|T|K|b|m|t|k)/g;
+  const anyMatches = [...text.matchAll(anyPriceRegex)];
+  for (const m of anyMatches) {
+    const val = parseFloat(m[1].replace(/,/g, ""));
+    if (val > 0 && val < 1_000_000) return `$${m[1]}`;
+  }
+  return null;
+}
+
+/** Прочитать содержимое URL — возвращает структуру { title, pageText, price } */
+async function readUrlContent(url: string): Promise<{
+  title: string;
+  pageText: string;
+  price: string | null;
+} | null> {
   if (!url.startsWith("http://") && !url.startsWith("https://")) return null;
   try {
     const resp = await fetch(url, {
@@ -578,9 +599,53 @@ async function tryReadUrl(url: string): Promise<string | null> {
     if (!resp.ok) return null;
     const ct = resp.headers.get("content-type") ?? "";
     if (!ct.includes("text/html") && !ct.includes("text/plain")) return null;
-    const text = await resp.text();
-    return htmlToText(text);
+    const raw = await resp.text();
+
+    // Title из <title>
+    const titleMatch = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch ? titleMatch[1].trim() : "";
+
+    // OG title
+    const ogMatch = raw.match(/<meta[^>]+property="og:title"[^>]+content="([^"]*)"[^>]*\/?>/i);
+    const ogTitle = ogMatch ? ogMatch[1].trim() : "";
+
+    // JSON-LD — ищем schema.org/Product с ценой
+    let jsonLdPrice: string | null = null;
+    const jsonLdBlocks = raw.match(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi);
+    if (jsonLdBlocks) {
+      for (const block of jsonLdBlocks) {
+        const json = block.replace(/<\/?script[^>]*>/gi, "");
+        try {
+          const data = JSON.parse(json.trim());
+          const offerPrice = data?.offers?.price ?? data?.mainEntity?.offers?.price;
+          if (offerPrice) {
+            const priceStr = String(offerPrice);
+            // Игнорируем если это явно не цена (миллиарды)
+            if (!priceStr.includes("e") && parseFloat(priceStr) < 1_000_000) {
+              jsonLdPrice = `$${priceStr}`;
+            }
+          }
+        } catch { /* ignore */ }
+      }
+    }
+
+    // Текстовое содержимое
+    const pageText = htmlToText(raw).slice(0, 2000);
+
+    // Извлекаем цену: приоритет JSON-LD > raw text
+    const price = jsonLdPrice ?? extractPrice(pageText);
+
+    const summary = [title, ogTitle ? `(${ogTitle})` : "", pageText].filter(Boolean).join(" — ").slice(0, 2000);
+    return { title, pageText: summary, price };
   } catch {
-    return null; // таймаут или ошибка — не критично
+    return null;
   }
+}
+
+/** Упрощённая обёртка: читает URL и возвращает текст + цену */
+async function tryReadUrl(url: string): Promise<string | null> {
+  const content = await readUrlContent(url);
+  if (!content) return null;
+  const priceLine = content.price ? `💰 Цена: ${content.price}` : "";
+  return [priceLine, content.pageText].filter(Boolean).join("\n").slice(0, 2000);
 }
