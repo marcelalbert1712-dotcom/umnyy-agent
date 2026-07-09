@@ -42,14 +42,27 @@ async function searchViaBrowser(query: string): Promise<string> {
       locale: "en-US",
     });
     const page = await ctx.newPage();
-    await page.goto(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+    // Используем Bing — он не блокирует
+    await page.goto(`https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=ru`, {
       waitUntil: "networkidle",
       timeout: 20000,
     });
-    await page.waitForSelector(".result__a", { timeout: 8000 }).catch(() => {});
-    const html = await page.content();
+    // Ждём появления результатов
+    await page.waitForSelector("li.b_algo", { timeout: 10000 }).catch(() => {});
+    // Извлекаем HTML результатов (только блоки с результатами)
+    const results = await page.evaluate(() => {
+      const items = document.querySelectorAll("li.b_algo");
+      return Array.from(items).slice(0, 5).map((item) => ({
+        title: item.querySelector("h2 a")?.textContent?.trim() ?? "",
+        url: (item.querySelector("h2 a") as HTMLAnchorElement)?.href ?? "",
+        snippet: item.querySelector(".b_caption p")?.textContent?.trim() ?? "",
+      }));
+    });
     await ctx.close();
-    return html;
+    return JSON.stringify({ results });
+  } catch (err: any) {
+    console.error("[searchViaBrowser] error:", err.message);
+    throw err;
   } finally {
     await browser.close().catch(() => {});
   }
@@ -231,13 +244,13 @@ export const tools = {
         }
       }
 
-      // Попытка 2: через Playwright (если прямой запрос не дал результатов)
+      // Попытка 2: через Playwright (Bing)
       if (!html) {
         try {
           console.log(`[webSearch] browser fallback for: "${query.slice(0, 50)}"`);
-          const browserHtml = await searchViaBrowser(query);
-          const results = parseDdgHtml(browserHtml);
-          return { query, results, source: "browser" };
+          const jsonStr = await searchViaBrowser(query);
+          const parsed = JSON.parse(jsonStr);
+          return { query, results: parsed.results ?? [], source: "bing" };
         } catch (err: any) {
           console.error(`[webSearch] browser fallback failed:`, err.message);
           return { query, results: [], error: "Поиск временно недоступен" };
