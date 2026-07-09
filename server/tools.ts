@@ -215,7 +215,7 @@ export const tools = {
 
   webSearch: tool({
     description:
-      "Искать в интернете по запросу и возвращать верхние результаты (заголовок, ссылка, сниппет). Использовать для фактических вопросов.",
+      "Искать в интернете по запросу и возвращать верхние результаты (заголовок, ссылка, сниппет, содержимое страницы). Использовать для фактических вопросов.",
     inputSchema: z.object({
       query: z.string().describe("Поисковый запрос"),
     }),
@@ -232,13 +232,15 @@ export const tools = {
       });
 
       let html: string | null = null;
+      let results: { title: string; url: string; snippet: string }[] = [];
       if (res.ok) {
         html = await res.text();
-        const results = parseDdgHtml(html);
+        results = parseDdgHtml(html);
         if (results.length > 0) {
-          return { query, results };
+          // Достаём содержимое топ-ссылки
+          const pageContent = await tryReadUrl(results[0].url);
+          return { query, results, topPageContent: pageContent };
         }
-        // Пустые результаты — DuckDuckGo мог вернуть капчу
         if (html.includes("anomaly") || html.includes("botnet") || html.includes("captcha")) {
           html = null;
         }
@@ -250,7 +252,9 @@ export const tools = {
           console.log(`[webSearch] browser fallback for: "${query.slice(0, 50)}"`);
           const jsonStr = await searchViaBrowser(query);
           const parsed = JSON.parse(jsonStr);
-          return { query, results: parsed.results ?? [], source: "bing" };
+          results = parsed.results ?? [];
+          const pageContent = results.length > 0 ? await tryReadUrl(results[0].url) : null;
+          return { query, results, source: "bing", topPageContent: pageContent };
         } catch (err: any) {
           console.error(`[webSearch] browser fallback failed:`, err.message);
           return { query, results: [], error: "Поиск временно недоступен" };
@@ -542,3 +546,41 @@ export const tools = {
     },
   }),
 };
+
+/** Извлечь текст из HTML (убрать теги, script, style) */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#\d{2,4};/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 3000);
+}
+
+/** Прочитать содержимое URL и извлечь текст */
+async function tryReadUrl(url: string): Promise<string | null> {
+  if (!url.startsWith("http://") && !url.startsWith("https://")) return null;
+  try {
+    const resp = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,*/*",
+      },
+    });
+    if (!resp.ok) return null;
+    const ct = resp.headers.get("content-type") ?? "";
+    if (!ct.includes("text/html") && !ct.includes("text/plain")) return null;
+    const text = await resp.text();
+    return htmlToText(text);
+  } catch {
+    return null; // таймаут или ошибка — не критично
+  }
+}
