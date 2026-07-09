@@ -552,6 +552,15 @@ export const tools = {
       return { ok: true, filePath, httpPath: `/api/workspace/${currentChatId}/${name}`, size: buf.length, contentType: res.headers.get("content-type") ?? "" };
     },
   }),
+  invokeAgent: tool({
+    description: "Делегировать подзадачу суб-агенту. Вызывай несколько раз в одном шаге для параллельного выполнения независимых задач.",
+    inputSchema: z.object({
+      goal: z.string().describe("Чёткая цель для суб-агента. Например: 'найди цену Bitcoin'"),
+    }),
+    execute: async ({ goal }) => {
+      return await runSubAgent(goal);
+    },
+  }),
 };
 
 /** Извлечь текст из HTML (убрать теги, script, style) */
@@ -655,4 +664,85 @@ async function tryReadUrl(url: string): Promise<string | null> {
   if (!content) return null;
   const priceLine = content.price ? `💰 Цена: ${content.price}` : "";
   return [priceLine, content.pageText].filter(Boolean).join("\n").slice(0, 2000);
+}
+
+/** Запустить суб-агента с сырым API-вызовом (не streamText). До 3 раундов, все инструменты кроме invokeAgent */
+async function runSubAgent(goal: string): Promise<string> {
+  const apiKey = process.env.POLZAAI_API_KEY;
+  if (!apiKey) return "Ошибка: POLZAAI_API_KEY не задан";
+  const baseUrl = process.env.POLZAAI_BASE_URL ?? "https://api.polza.ai/v1";
+  const modelRaw = process.env.POLZAAI_MODEL ?? "openai/gpt-4o-mini";
+  const provider = process.env.POLZAAI_PROVIDER ?? "OpenAI";
+  const model = modelRaw.includes("@") ? modelRaw : `${modelRaw}@provider=${provider}&allow_fallbacks=false`;
+
+  const { invokeAgent: _, ...subTools } = tools; // убираем invokeAgent — без рекурсии
+
+  const toolsForApi = Object.entries(subTools).map(([name, t]) => ({
+    type: "function" as const,
+    function: {
+      name,
+      description: (t as any).description ?? "",
+      parameters: (t as any).inputSchema ?? {},
+    },
+  }));
+
+  const messages: Array<{ role: string; content: string }> = [
+    { role: "system", content: `Ты — суб-агент. Выполни задачу используя инструменты. Не вызывай invokeAgent. Отвечай кратко, только существенный результат. Задача: ${goal}` },
+  ];
+
+  let finalText = "";
+
+  for (let round = 0; round < 3; round++) {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, messages, tools: toolsForApi, max_tokens: 2048, temperature: 0.3 }),
+    });
+    if (!res.ok) {
+      const err = await res.text().catch(() => "");
+      return `Ошибка API суб-агента: ${res.status} ${err}`;
+    }
+    const data = await res.json();
+    const choice = data.choices?.[0];
+    if (!choice) return "Нет ответа от API";
+
+    const msg = choice.message;
+    const content = msg.content ?? "";
+    if (content) finalText = content;
+
+    const toolCalls = msg.tool_calls;
+    if (!toolCalls || toolCalls.length === 0) {
+      // Больше нет вызовов — ответ готов
+      return finalText || content || goal;
+    }
+
+    // Assistant message с tool_calls
+    messages.push({ role: "assistant", content: content || null, tool_calls: toolCalls });
+    // Выполняем tool calls и добавляем результаты
+    for (const tc of toolCalls) {
+      const toolName = tc.function.name;
+      const toolFn = (subTools as any)[toolName];
+      if (!toolFn?.execute) {
+        messages.push({ role: "tool", content: `Ошибка: инструмент ${toolName} не найден`, tool_call_id: tc.id });
+        continue;
+      }
+      try {
+        const args = JSON.parse(tc.function.arguments);
+        const result = await toolFn.execute(args);
+        messages.push({
+          role: "tool",
+          content: typeof result === "string" ? result : JSON.stringify(result),
+          tool_call_id: tc.id,
+        });
+      } catch (err: any) {
+        messages.push({
+          role: "tool",
+          content: `Ошибка: ${err.message}`,
+          tool_call_id: tc.id,
+        });
+      }
+    }
+  }
+
+  return finalText || "Не удалось выполнить подзадачу";
 }

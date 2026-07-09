@@ -1,0 +1,18 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "umnyy-agent": {
+      "description": "Manus-подобный ИИ-агент: deep research, multi-agent, browser automation, веб-поиск с fallback, память, фоновые задачи",
+      "mode": "subagent",
+      "temperature": 0.3,
+      "permission": {
+        "read": "allow",
+        "edit": "allow",
+        "bash": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow"
+      }
+    }
+  }
+}

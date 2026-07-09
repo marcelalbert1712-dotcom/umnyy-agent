@@ -1,53 +1,103 @@
 # Umnyy Agent — Summary
 
 ## Objective
-Manus-подобный агент: запуск кода, multi-agent планирование, асинхронные задачи, воркспейсы, Computer Use
+Manus-подобный ИИ-агент: deep research, multi-agent оркестрация, асинхронные задачи, воркспейсы, Computer Use
 
 ## Dev
-- http://localhost:5173/ (Vite)
+- http://localhost:5173/ (Vite через PM2)
 - **Важно**: используй короткий путь `C:\Users\!!!~1\Documents\OPENCO~1\umnyy-agent` вместо длинного с юникодом
-- React 19 + TypeScript + Vite + TailwindCSS, бэкенд Vite middleware + Netlify Functions
+- React 19 + TypeScript + Vite + TailwindCSS, бэкенд Vite middleware
 - AI: PolzaAI, ключ в `.env`: `POLZAAI_API_KEY`
 - Git: `C:\Program Files\Git\bin\git.exe`
-- Playwright + Chromium (headless) установлены
+- Playwright + Chromium (полный chrome.exe)
 - `@ai-sdk/react@4.0.18` + `ai@7.0.17` + `@ai-sdk/openai@4.0.8`
-- `useChat` с `api="/api/chat"` + `experimental_throttle: 150`
 
 ## Completed Features
-- **UI**: ползунок температуры, архив чатов, подсветка поиска, хоткеи
-- **Код**: `/api/run-code` (JS + Python), кнопка Run на code-блоках
-- **Планирование**: SYSTEM_PROMPT (Планируй→Исполняй→Анализируй→Сообщи), multi-agent
-- **Асинхронные задачи**: task-queue + API + TaskPanel
-- **Воркспейсы**: `/api/workspace` (CRUD), `saveFile` + `downloadFile` tools, WorkspacePanel
-- **Computer Use**: Playwright browser, `/api/browser`, `browserAgent` tool, BrowserPanel
-- **Веб-поиск**: `webSearch` tool — DuckDuckGo HTML scraping
-- **Память**: `saveUserFact`/`updateUserFact`/`deleteUserFact` — facts fed in system prompt
-- **Голосовой ввод**: MediaRecorder → Whisper API (`/api/transcribe`)
-- **Озвучка**: SpeakButton с SpeechSynthesis на каждом сообщении ассистента
-- **Визуализация tool-запросов**: Collapsible Tool-карточки (вход/выход/ошибка)
-- **Повтор сообщения**: кнопка Retry на user-сообщениях (удаляет + отправляет заново)
+
+### Multi-agent оркестрация
+- **invokeAgent tool**: оркестратор делегирует подзадачи суб-агентам
+- **Параллельные суб-агенты**: вызывай несколько invokeAgent в одном шаге
+- **Depth limit**: invokeAgent исключён из инструментов суб-агента (нет рекурсии)
+- **Суб-агенты**: 3 раунда, raw PolzaAI API, все инструменты кроме invokeAgent
+- **SYSTEM_PROMPT**: правила делегирования + примеры
+
+### Deep Research
+- `/api/research`: DuckDuckGo + readUrl + 3 итерации + Markdown-отчёт
+- Кнопка Research в шапке чата
+
+### Фоновые задачи
+- Backend background agent: ручной raw API, 10 раундов, все инструменты + MCP
+- TaskPanel в чате: пульсация, прогресс, «Показать результат»
+- Кнопка «В фон» в тулбаре отправляет запрос как фоновую задачу
+- Сброс зависших задач при старте сервера
+- DELETE задач через `/api/tasks`
+
+### Веб-поиск
+- DuckDuckGo HTML scraping (прямой fetch)
+- Fallback через Playwright + Bing при капче
+- Авто-чтение топ-ссылки после поиска (tryReadUrl)
+- Умное извлечение цены (JSON-LD → `$число` < $1M)
+- Защита от зацикливания: 3 пустых раунда / 6+ webSearch из 8 последних = стоп
+
+### Vision / Upload
+- `/api/upload`: сохранение изображений в `.user-data/uploads/`
+- Конвертация file → image для AI vision API
+- Раздача `/api/uploads/...`
+
+### Session Memory
+- Авто-суммаризация 200 символов после каждого ответа
+- 5 последних саммари подшиваются в system prompt
+
+### Auto-facts
+- fire-and-forget после onFinish: лёгкая модель → saveUserFact (без дубликатов)
+
+### MCP-серверы
+- mcp-manager.ts: StdioClientTransport
+- Настройки в mcpServers → UserSettings
+- Вкладка «MCP» в админке
+- Инструменты с префиксом mcp_<id>_<name>
+
+### UI
+- Pin чатов (PinIcon, сортировка по pinned)
+- Collapsible длинных ответов (>1000 символов)
+- Tool-карточки свёрнуты (defaultOpen={false})
+- Delete message (Trash2Icon)
+- Retry на user-сообщениях
+- Visual Plan Panel (reasoning → чеклист)
+- Browser Panel с WebSocket + polling fallback
+- Workspace Panel
+- Голосовой ввод (Whisper)
+- Озвучка ответов (SpeechSynthesis)
+- Ползунок температуры
+- Архив чатов, подсветка поиска, хоткеи
 
 ## Tools
 - `getCurrentTime`, `getWeather`, `webSearch`, `calculator`, `generateImage`
-- `runCode` — JS (node -e) / Python (python или python3)
-- `saveFile` — сохранение в workspace, возвращает httpPath
-- `downloadFile` — скачать URL → workspace
+- `runCode` — JS (node -e) / Python
+- `saveFile` / `downloadFile` — workspace
 - `browserAgent` — navigate/screenshot/click/type/scroll/getText/close
-- `saveUserFact` / `updateUserFact` / `deleteUserFact` — память о пользователе
+- `saveUserFact` / `updateUserFact` / `deleteUserFact` — память
+- `invokeAgent` — делегирование суб-агенту
 
 ### Vite middleware
-- `/api/chat` — SSE stream чата
+- `/api/chat` — SSE stream
 - `/api/run-code` — выполнить код
-- `/api/tasks` — CRUD async задач
-- `/api/workspace/:chatId/:filename` — файлы workspace
+- `/api/tasks` — CRUD задач
 - `/api/browser?chatId=` — управление браузером
 - `/api/settings` — температура
-- `/api/transcribe` — распознавание голоса (Whisper)
+- `/api/transcribe` — распознавание голоса
+- `/api/upload` — загрузка изображений
+- `/api/research` — deep research
+- `/api/workspace/:chatId/:filename` — файлы workspace
+- `/api/uploads/:chatId/:filename` — загруженные изображения
 
-### Netlify Functions
-- `netlify/functions/run-code.mts`
-- `netlify/functions/tasks.mts`
+## PM2
+- `ecosystem.config.cjs` — скрипт `node_modules/vite/bin/vite.js`
+- `pm2 start/restart ecosystem.config.cjs`
+- `pm2 save` + ярлык в Startup → `pm2-resurrect.bat` → автозапуск при входе
+- Используй `pm2` напрямую (не `node bin\pm2`)
 
 ## Known Issues
-- Python может быть не установлен на Windows; перебирает `python` → `python3`
+- Python может быть не установлен на Windows
 - Browser sessions не очищаются при закрытии чата
+- PowerShell ломается на юникоде — команды по одной
