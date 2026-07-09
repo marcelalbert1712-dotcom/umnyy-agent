@@ -7,6 +7,54 @@ export let currentChatId = "default";
 export function setCurrentChatId(id: string) { currentChatId = id; }
 import { getFactStore } from "./user-facts.ts";
 
+// Хелперы для поиска
+function parseDdgHtml(html: string) {
+  const results: { title: string; url: string; snippet: string }[] = [];
+  const linkRegex = /<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
+  const snippetRegex = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+  const links: string[] = [];
+  const titles: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = linkRegex.exec(html)) !== null) {
+    links.push(m[1].trim());
+    titles.push(m[2].replace(/<[^>]*>/g, "").trim());
+  }
+  const snippets: string[] = [];
+  while ((m = snippetRegex.exec(html)) !== null) {
+    snippets.push(m[1].replace(/<[^>]*>/g, "").trim());
+  }
+  for (let i = 0; i < Math.min(links.length, 5); i++) {
+    results.push({
+      title: titles[i] ?? `Результат ${i + 1}`,
+      url: links[i]?.startsWith("http") ? links[i] : `https:${links[i]}`,
+      snippet: snippets[i] ?? "",
+    });
+  }
+  return results;
+}
+
+async function searchViaBrowser(query: string): Promise<string> {
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
+  try {
+    const ctx = await browser.newContext({
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+      locale: "en-US",
+    });
+    const page = await ctx.newPage();
+    await page.goto(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+      waitUntil: "networkidle",
+      timeout: 20000,
+    });
+    await page.waitForSelector(".result__a", { timeout: 8000 }).catch(() => {});
+    const html = await page.content();
+    await ctx.close();
+    return html;
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
 /**
  * Инструменты агента. Каждый инструмент имеет `execute` (серверный),
  * поэтому многошаговый цикл (`stopWhen: stepCountIs`) выполняется целиком
@@ -159,47 +207,44 @@ export const tools = {
       query: z.string().describe("Поисковый запрос"),
     }),
     execute: async ({ query }) => {
+      // Попытка 1: прямой fetch с redirect: manual
       const res = await fetch("https://html.duckduckgo.com/html/", {
         method: "POST",
         redirect: "manual",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "Mozilla/5.0",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         },
         body: `q=${encodeURIComponent(query)}`,
       });
-      if (!res.ok) {
-        return { query, error: `Ошибка поиска (HTTP ${res.status})` };
+
+      let html: string | null = null;
+      if (res.ok) {
+        html = await res.text();
+        const results = parseDdgHtml(html);
+        if (results.length > 0) {
+          return { query, results };
+        }
+        // Пустые результаты — DuckDuckGo мог вернуть капчу
+        if (html.includes("anomaly") || html.includes("botnet") || html.includes("captcha")) {
+          html = null;
+        }
       }
 
-      const html = await res.text();
-      const results: { title: string; url: string; snippet: string }[] = [];
-      const linkRegex = /<a[^>]+class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
-      const snippetRegex = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
-
-      const links: string[] = [];
-      const titles: string[] = [];
-      let m: RegExpExecArray | null;
-      while ((m = linkRegex.exec(html)) !== null) {
-        links.push(m[1].trim());
-        titles.push(m[2].replace(/<[^>]*>/g, "").trim());
-      }
-      const snippets: string[] = [];
-      while ((m = snippetRegex.exec(html)) !== null) {
-        snippets.push(m[1].replace(/<[^>]*>/g, "").trim());
+      // Попытка 2: через Playwright (если прямой запрос не дал результатов)
+      if (!html) {
+        try {
+          console.log(`[webSearch] browser fallback for: "${query.slice(0, 50)}"`);
+          const browserHtml = await searchViaBrowser(query);
+          const results = parseDdgHtml(browserHtml);
+          return { query, results, source: "browser" };
+        } catch (err: any) {
+          console.error(`[webSearch] browser fallback failed:`, err.message);
+          return { query, results: [], error: "Поиск временно недоступен" };
+        }
       }
 
-      for (let i = 0; i < Math.min(links.length, 5); i++) {
-        results.push({
-          title: titles[i] ?? `Результат ${i + 1}`,
-          url: links[i]?.startsWith("http")
-            ? links[i]
-            : `https:${links[i]}`,
-          snippet: snippets[i] ?? "",
-        });
-      }
-
-      return { query, results };
+      return { query, results: [] };
     },
   }),
 

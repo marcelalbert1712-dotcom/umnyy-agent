@@ -102,6 +102,8 @@ export async function runBackgroundAgent(
 
   let fullResponse = "";
   const maxRounds = 10;
+  let emptyResultCount = 0;
+  const toolCallHistory: string[] = [];
 
   for (let round = 0; round < maxRounds; round++) {
     // Уведомляем о прогрессе
@@ -169,6 +171,7 @@ export async function runBackgroundAgent(
     }
 
     // Выполняем каждый tool
+    let isEmptyRound = true;
     for (const tc of msg.tool_calls) {
       const toolFn = toolMap.get(tc.function.name);
       if (!toolFn) {
@@ -188,6 +191,7 @@ export async function runBackgroundAgent(
         args = {};
       }
 
+      toolCallHistory.push(tc.function.name);
       console.log(`[bg-agent] executing tool: ${tc.function.name}`, args);
       await updateTask(taskId, { progress: `Выполняю: ${tc.function.name}...` });
 
@@ -195,6 +199,16 @@ export async function runBackgroundAgent(
         const result = await toolFn.execute(args);
         const resultStr = typeof result === "string" ? result : JSON.stringify(result);
         console.log(`[bg-agent] tool ${tc.function.name} result: ${resultStr.slice(0, 100)}`);
+        // Проверка: результат содержит данные, а не пустой массив
+        const parsed = typeof result === "string" ? null : result as Record<string, unknown>;
+        const hasData = parsed
+          ? (Array.isArray(parsed.results) && parsed.results.length > 0) ||
+            (Array.isArray(parsed.data) && parsed.data.length > 0) ||
+            (typeof parsed.result !== "undefined" && parsed.result !== null) ||
+            (typeof parsed.url === "string" && parsed.url.length > 0)
+          : resultStr.length > 5;
+        if (hasData) isEmptyRound = false;
+
         messages.push({
           role: "tool",
           tool_call_id: tc.id,
@@ -202,12 +216,37 @@ export async function runBackgroundAgent(
         } as any);
       } catch (err: any) {
         console.error(`[bg-agent] tool ${tc.function.name} error:`, err);
+        isEmptyRound = false;
         messages.push({
           role: "tool",
           tool_call_id: tc.id,
           content: JSON.stringify({ error: err.message ?? String(err) }),
         } as any);
       }
+    }
+
+    // Защита от зацикливания: если 3 раунда подряд все инструменты вернули пусто — выходим
+    if (isEmptyRound) {
+      emptyResultCount++;
+      if (emptyResultCount >= 3) {
+        const lastText = fullResponse.trim() || "(агент не смог найти данные)";
+        messages.push({
+          role: "assistant",
+          content: `[Поиск не дал новых результатов после ${emptyResultCount} попыток. Использую то, что уже есть.]\n\n${lastText}`,
+        });
+        console.log(`[bg-agent] loop detected, stopping after ${emptyResultCount} empty rounds`);
+        break;
+      }
+    } else {
+      emptyResultCount = 0;
+    }
+
+    // Проверка: если однотипные запросы webSearch повторяются 4+ раз
+    const recentTools = toolCallHistory.slice(-8);
+    const webSearchCalls = recentTools.filter((t) => t === "webSearch").length;
+    if (webSearchCalls >= 6 && round >= 4) {
+      console.log(`[bg-agent] too many repeating webSearch calls, stopping`);
+      break;
     }
   }
 
