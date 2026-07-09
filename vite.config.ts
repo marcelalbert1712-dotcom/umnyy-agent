@@ -23,6 +23,7 @@ export default defineConfig(({ mode }) => {
     if (process.env[k] === undefined) process.env[k] = v;
   }
   return {
+    server: { host: true }, // доступ с любых IP (телефон)
     plugins: [
       react(),
       tailwindcss(),

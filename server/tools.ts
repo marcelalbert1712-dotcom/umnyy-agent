@@ -35,7 +35,14 @@ function parseDdgHtml(html: string) {
 
 async function searchViaBrowser(query: string): Promise<string> {
   const { chromium } = await import("playwright");
-  const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
+  // Используем полный Chrome (GUI-приложение — не показывает консоль),
+  // а не headless_shell (консольное приложение — всегда открывает окно).
+  const chromePath = "C:\\Users\\!!!~1\\AppData\\Local\\ms-Playwright\\chromium-1228\\chrome-win64\\chrome.exe";
+  const browser = await chromium.launch({
+    headless: true,
+    executablePath: chromePath,
+    args: ["--no-sandbox"],
+  });
   try {
     const ctx = await browser.newContext({
       userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",

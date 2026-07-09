@@ -6,8 +6,10 @@ const pages = new Map<string, Page>();
 
 async function getBrowser(): Promise<Browser> {
   if (!browser || !browser.isConnected()) {
+    const chromePath = "C:\\Users\\!!!~1\\AppData\\Local\\ms-Playwright\\chromium-1228\\chrome-win64\\chrome.exe";
     browser = await chromium.launch({
       headless: true,
+      executablePath: chromePath,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
   }
