@@ -14,6 +14,7 @@ import {
   SaveIcon,
   SearchIcon,
   StarIcon,
+  Trash2Icon,
   Volume2Icon,
   WrenchIcon,
   XIcon,
@@ -721,6 +722,11 @@ export function ChatPanel({
     }, 50);
   };
 
+  // ── Delete message ──────────────────────────────────────────────
+  const handleDelete = (msgId: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+  };
+
   // ── Presets ────────────────────────────────────────────────────
   type Preset = { name: string; text: string };
   const [presets, setPresets] = useState<Preset[]>(() => {
@@ -1320,6 +1326,17 @@ export function ChatPanel({
                           title="Копировать"
                         >
                           <CopyIcon className="size-3.5" />
+                        </button>
+                      )}
+                      {(msgText || isAssistant) && (
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(message.id)}
+                          className="flex size-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100"
+                          aria-label="Удалить"
+                          title="Удалить"
+                        >
+                          <Trash2Icon className="size-3.5" />
                         </button>
                       )}
                       {isAssistant && (
