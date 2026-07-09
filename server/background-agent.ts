@@ -7,16 +7,15 @@ import { updateTask } from "./task-queue.ts";
 import { getRecentMemories } from "./session-memory.ts";
 import { SYSTEM_PROMPT } from "./polza-client.ts";
 
-const POLZAAI_BASE_URL =
-  process.env.POLZAAI_BASE_URL ?? "https://api.polza.ai/v1";
-const POLZAAI_MODEL_RAW =
-  process.env.POLZAAI_MODEL ?? "openai/gpt-4o-mini";
-const POLZAAI_PROVIDER = process.env.POLZAAI_PROVIDER ?? "OpenAI";
-const POLZAAI_API_KEY = process.env.POLZAAI_API_KEY;
+function getEnv(name: string, fallback: string): string {
+  return (process.env as Record<string, string>)[name] ?? fallback;
+}
 
-const activeModel = POLZAAI_MODEL_RAW.includes("@")
-  ? POLZAAI_MODEL_RAW
-  : `${POLZAAI_MODEL_RAW}@provider=${POLZAAI_PROVIDER}&allow_fallbacks=false`;
+function getModel(): string {
+  const raw = getEnv("POLZAAI_MODEL", "openai/gpt-4o-mini");
+  const provider = getEnv("POLZAAI_PROVIDER", "OpenAI");
+  return raw.includes("@") ? raw : `${raw}@provider=${provider}&allow_fallbacks=false`;
+}
 
 type ToolDef = {
   name: string;
@@ -109,8 +108,12 @@ export async function runBackgroundAgent(
     // Уведомляем о прогрессе
     await updateTask(taskId, { progress: `Раунд ${round + 1}/${maxRounds}...` });
 
+    const apiKey = process.env.POLZAAI_API_KEY;
+    if (!apiKey) throw new Error("POLZAAI_API_KEY is not set");
+    const baseUrl = getEnv("POLZAAI_BASE_URL", "https://api.polza.ai/v1");
+
     const body = {
-      model: activeModel,
+      model: getModel(),
       messages: [{ role: "system", content: fullSystem } as Record<string, unknown>, ...messages],
       tools: apiTools.length > 0 ? apiTools : undefined,
       max_tokens: 4096,
@@ -119,11 +122,11 @@ export async function runBackgroundAgent(
 
     console.log(`[bg-agent] round ${round + 1}, calling API with ${messages.length} messages`);
 
-    const res = await fetch(`${POLZAAI_BASE_URL}/chat/completions`, {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${POLZAAI_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(60_000),
