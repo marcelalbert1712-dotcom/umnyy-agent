@@ -27,6 +27,14 @@ export type UserSettings = {
   temperature: number | null;
   folders: FolderDef[];
   mcpServers: ToolConfig[];
+  telegramBotToken: string;
+  telegramChatId: string;
+  githubToken: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPass: string;
+  smtpFrom: string;
   updatedAt: number;
 };
 
@@ -37,6 +45,14 @@ export const DEFAULT_SETTINGS: UserSettings = {
   temperature: null,
   folders: [],
   mcpServers: [],
+  telegramBotToken: "",
+  telegramChatId: "",
+  githubToken: "",
+  smtpHost: "",
+  smtpPort: 587,
+  smtpUser: "",
+  smtpPass: "",
+  smtpFrom: "",
   updatedAt: 0,
 };
 
@@ -65,6 +81,14 @@ async function readFile(): Promise<UserSettings> {
       temperature: data.temperature !== undefined ? data.temperature : DEFAULT_SETTINGS.temperature,
       folders: Array.isArray(data.folders) ? data.folders : DEFAULT_SETTINGS.folders,
       mcpServers: Array.isArray(data.mcpServers) ? data.mcpServers : DEFAULT_SETTINGS.mcpServers,
+      telegramBotToken: typeof data.telegramBotToken === "string" ? data.telegramBotToken : DEFAULT_SETTINGS.telegramBotToken,
+      telegramChatId: typeof data.telegramChatId === "string" ? data.telegramChatId : DEFAULT_SETTINGS.telegramChatId,
+      githubToken: typeof data.githubToken === "string" ? data.githubToken : DEFAULT_SETTINGS.githubToken,
+      smtpHost: typeof data.smtpHost === "string" ? data.smtpHost : DEFAULT_SETTINGS.smtpHost,
+      smtpPort: typeof data.smtpPort === "number" ? data.smtpPort : DEFAULT_SETTINGS.smtpPort,
+      smtpUser: typeof data.smtpUser === "string" ? data.smtpUser : DEFAULT_SETTINGS.smtpUser,
+      smtpPass: typeof data.smtpPass === "string" ? data.smtpPass : DEFAULT_SETTINGS.smtpPass,
+      smtpFrom: typeof data.smtpFrom === "string" ? data.smtpFrom : DEFAULT_SETTINGS.smtpFrom,
       updatedAt: data.updatedAt ?? 0,
     };
   } catch {
@@ -96,6 +120,14 @@ export const fileSettingsStore: SettingsStore = {
       temperature: input.temperature !== undefined ? input.temperature : current.temperature,
       folders: Array.isArray(input.folders) ? input.folders : current.folders,
       mcpServers: Array.isArray(input.mcpServers) ? input.mcpServers : current.mcpServers,
+      telegramBotToken: typeof input.telegramBotToken === "string" ? input.telegramBotToken : current.telegramBotToken,
+      telegramChatId: typeof input.telegramChatId === "string" ? input.telegramChatId : current.telegramChatId,
+      githubToken: typeof input.githubToken === "string" ? input.githubToken : current.githubToken,
+      smtpHost: typeof input.smtpHost === "string" ? input.smtpHost : current.smtpHost,
+      smtpPort: typeof input.smtpPort === "number" ? input.smtpPort : current.smtpPort,
+      smtpUser: typeof input.smtpUser === "string" ? input.smtpUser : current.smtpUser,
+      smtpPass: typeof input.smtpPass === "string" ? input.smtpPass : current.smtpPass,
+      smtpFrom: typeof input.smtpFrom === "string" ? input.smtpFrom : current.smtpFrom,
       updatedAt: Date.now(),
     };
     await writeFile(next);

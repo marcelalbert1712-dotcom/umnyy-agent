@@ -6,7 +6,10 @@ import {
   getChat,
   listChats,
   saveChat,
+  startBackupScheduler,
 } from "./chat-storage.ts";
+import { startCronScheduler } from "./cron-store.ts";
+import { startRSSChecker } from "./rss-scheduler.ts";
 import { closeChatSession } from "./browser-session.ts";
 import type { UIMessage } from "ai";
 
@@ -34,6 +37,9 @@ export function chatsApiPlugin(): Plugin {
   return {
     name: "chats-api",
     configureServer(server: ViteDevServer) {
+      startBackupScheduler();
+      void startCronScheduler();
+      void startRSSChecker();
       server.middlewares.use(async (req, res, next) => {
         const url = new URL(req.url ?? "", "http://localhost");
         const pathname = url.pathname;

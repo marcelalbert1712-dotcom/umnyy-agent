@@ -68,6 +68,14 @@ export type UserSettings = {
   temperature: number | null;
   folders?: Array<{ id: string; name: string }>;
   mcpServers?: ToolConfig[];
+  telegramBotToken?: string;
+  telegramChatId?: string;
+  githubToken?: string;
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpUser?: string;
+  smtpPass?: string;
+  smtpFrom?: string;
   updatedAt: number;
 };
 

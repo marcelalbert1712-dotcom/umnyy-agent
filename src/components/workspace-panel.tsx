@@ -43,7 +43,11 @@ export function WorkspacePanel({ chatId }: { chatId: string }) {
 
   const handleDelete = async (name: string) => {
     try {
-      await fetch(`/api/workspace/default/${encodeURIComponent(name)}`, { method: "DELETE" });
+      const res = await fetch(`/api/workspace/${encodeURIComponent(chatId)}/${encodeURIComponent(name)}`, { method: "DELETE" });
+      if (!res.ok && chatId !== "default") {
+        // fallback: попробуем удалить из default
+        await fetch(`/api/workspace/default/${encodeURIComponent(name)}`, { method: "DELETE" });
+      }
       setFiles((prev) => prev.filter((f) => f.name !== name));
     } catch { /* ignore */ }
   };
@@ -70,7 +74,7 @@ export function WorkspacePanel({ chatId }: { chatId: string }) {
           ) : (
             files.map((f) => {
               const ext = f.name.split(".").pop()?.toUpperCase();
-              const fileUrl = `/api/workspace/default/${encodeURIComponent(f.name)}`;
+              const fileUrl = `/api/workspace/${encodeURIComponent(chatId === "default" ? "default" : chatId)}/${encodeURIComponent(f.name)}`;
               return (
                 <div key={f.name} className="group flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs">
                   <FileIcon className="size-3 shrink-0 text-muted-foreground" />

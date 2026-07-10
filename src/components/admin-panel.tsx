@@ -2,11 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeftIcon,
   CheckIcon,
+  ClockIcon,
+  GithubIcon,
   HistoryIcon,
   LoaderIcon,
+  MailIcon,
   PencilIcon,
   PlugIcon,
   PlusIcon,
+  RssIcon,
   SaveIcon,
   Trash2Icon,
   XIcon,
@@ -37,7 +41,7 @@ const CATEGORIES: FactCategory[] = [
   "other",
 ];
 
-type View = "facts" | "character" | "mcp" | "log";
+type View = "facts" | "character" | "mcp" | "telegram" | "github" | "email" | "rss" | "cron" | "log";
 
 export type AdminPanelProps = {
   onBack: () => void;
@@ -79,6 +83,40 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
             MCP
           </TabButton>
           <TabButton
+            active={view === "telegram"}
+            onClick={() => setView("telegram")}
+          >
+            Telegram
+          </TabButton>
+          <TabButton
+            active={view === "github"}
+            onClick={() => setView("github")}
+          >
+            <GithubIcon className="size-3.5" />
+            GitHub
+          </TabButton>
+          <TabButton
+            active={view === "email"}
+            onClick={() => setView("email")}
+          >
+            <MailIcon className="size-3.5" />
+            Email
+          </TabButton>
+          <TabButton
+            active={view === "rss"}
+            onClick={() => setView("rss")}
+          >
+            <RssIcon className="size-3.5" />
+            RSS
+          </TabButton>
+          <TabButton
+            active={view === "cron"}
+            onClick={() => setView("cron")}
+          >
+            <ClockIcon className="size-3.5" />
+            Задачи
+          </TabButton>
+          <TabButton
             active={view === "log"}
             onClick={() => setView("log")}
           >
@@ -96,6 +134,16 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
             <CharacterSection />
           ) : view === "mcp" ? (
             <McpSection />
+          ) : view === "telegram" ? (
+            <TelegramSection />
+          ) : view === "github" ? (
+            <GithubSection />
+          ) : view === "email" ? (
+            <EmailSection />
+          ) : view === "rss" ? (
+            <RssSection />
+          ) : view === "cron" ? (
+            <CronSection />
           ) : (
             <LogSection />
           )}
@@ -882,6 +930,107 @@ function McpSection() {
   );
 }
 
+function TelegramSection() {
+  const [token, setToken] = useState("");
+  const [chatId, setChatId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings");
+      if (res.ok) {
+        const data = await res.json();
+        setToken(data.settings?.telegramBotToken ?? "");
+        setChatId(data.settings?.telegramChatId ?? "");
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telegramBotToken: token, telegramChatId: chatId }),
+      });
+      setTestResult("Сохранено");
+    } catch {
+      setTestResult("Ошибка сохранения");
+    }
+    setSaving(false);
+  };
+
+  const handleTest = async () => {
+    if (!token || !chatId) { setTestResult("Сначала заполни Token и Chat ID"); return; }
+    setTestResult("Отправка...");
+    try {
+      const res = await fetch("https://api.telegram.org/bot" + token + "/sendMessage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: "✅ Umnyy Agent: тестовое сообщение"}
+      )});
+      if (res.ok) {
+        setTestResult("✅ Успешно отправлено!");
+      } else {
+        const err = await res.text();
+        setTestResult("Ошибка: " + err.slice(0, 100));
+      }
+    } catch (e: any) {
+      setTestResult("Ошибка: " + e.message);
+    }
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold">Telegram</h2>
+        <p className="text-sm text-muted-foreground">
+          Настрой отправку сообщений в Telegram. Создай бота через <code>@BotFather</code>,
+          получи Token и узнай свой Chat ID.
+        </p>
+      </div>
+      <div className="space-y-3">
+        <div>
+          <label className="text-sm font-medium">Bot Token</label>
+          <input
+            type="password"
+            className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+            placeholder="1234567890:ABCdefGHIjklmNOPqrstUVwxyz"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium">Chat ID</label>
+          <input
+            type="text"
+            className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+            placeholder="-1234567890 или 1234567890"
+            value={chatId}
+            onChange={(e) => setChatId(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button type="button" size="sm" onClick={handleSave} disabled={saving}>
+            <SaveIcon className="size-4" />
+            {saving ? "Сохранение..." : "Сохранить"}
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={handleTest}>
+            Тест
+          </Button>
+        </div>
+        {testResult && (
+          <p className="text-sm text-muted-foreground">{testResult}</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function McpForm({
   initial,
   onSaved,
@@ -946,5 +1095,401 @@ function McpForm({
         </Button>
       </div>
     </div>
+  );
+}
+
+function GithubSection() {
+  const [token, setToken] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings");
+      if (res.ok) {
+        const data = await res.json();
+        setToken(data.settings?.githubToken ?? "");
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ githubToken: token }),
+      });
+      setMsg("Сохранено");
+    } catch {
+      setMsg("Ошибка сохранения");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold">GitHub</h2>
+        <p className="text-sm text-muted-foreground">
+          Personal Access Token для публикации сайтов на GitHub Pages
+          через инструмент <code>deployGithubPages</code>. Создай токен
+          на <a href="https://github.com/settings/tokens/new?scopes=repo,workflow" target="_blank" rel="noreferrer" className="underline">github.com/settings/tokens</a> со scope <code>repo</code> и <code>workflow</code>.
+        </p>
+      </div>
+      <div className="space-y-3">
+        <div>
+          <label className="text-sm font-medium">Personal Access Token</label>
+          <input
+            type="password"
+            className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+            placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button type="button" size="sm" onClick={handleSave} disabled={saving}>
+            <SaveIcon className="size-4" />
+            {saving ? "Сохранение..." : "Сохранить"}
+          </Button>
+        </div>
+        {msg && (
+          <p className="text-sm text-muted-foreground">{msg}</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function EmailSection() {
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState(587);
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [smtpFrom, setSmtpFrom] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings");
+      if (res.ok) {
+        const data = await res.json();
+        setSmtpHost(data.settings?.smtpHost ?? "");
+        setSmtpPort(data.settings?.smtpPort ?? 587);
+        setSmtpUser(data.settings?.smtpUser ?? "");
+        setSmtpPass(data.settings?.smtpPass ?? "");
+        setSmtpFrom(data.settings?.smtpFrom ?? "");
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom }),
+      });
+      setMsg("Сохранено");
+    } catch {
+      setMsg("Ошибка сохранения");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold">Email (SMTP)</h2>
+        <p className="text-sm text-muted-foreground">
+          Настрой SMTP для отправки писем через инструмент <code>sendEmail</code>.
+          Для Gmail используй app-пароль (не основной пароль).
+        </p>
+      </div>
+      <div className="space-y-3">
+        <div className="grid grid-cols-3 gap-2">
+          <div className="col-span-2">
+            <label className="text-sm font-medium">SMTP Host</label>
+            <input
+              type="text"
+              className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+              placeholder="smtp.gmail.com"
+              value={smtpHost}
+              onChange={(e) => setSmtpHost(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Port</label>
+            <input
+              type="number"
+              className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+              placeholder="587"
+              value={smtpPort}
+              onChange={(e) => setSmtpPort(Number(e.target.value))}
+            />
+          </div>
+        </div>
+        <div>
+          <label className="text-sm font-medium">SMTP User (email)</label>
+          <input
+            type="text"
+            className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+            placeholder="you@gmail.com"
+            value={smtpUser}
+            onChange={(e) => setSmtpUser(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium">SMTP Password (app password)</label>
+          <input
+            type="password"
+            className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+            placeholder="xxxx xxxx xxxx xxxx"
+            value={smtpPass}
+            onChange={(e) => setSmtpPass(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium">From (имя отправителя)</label>
+          <input
+            type="text"
+            className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+            placeholder='Имя <you@gmail.com> или просто you@gmail.com'
+            value={smtpFrom}
+            onChange={(e) => setSmtpFrom(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button type="button" size="sm" onClick={handleSave} disabled={saving}>
+            <SaveIcon className="size-4" />
+            {saving ? "Сохранение..." : "Сохранить"}
+          </Button>
+        </div>
+        {msg && (
+          <p className="text-sm text-muted-foreground">{msg}</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function RssSection() {
+  const [feeds, setFeeds] = useState<any[]>([]);
+  const [url, setUrl] = useState("");
+  const [title, setTitle] = useState("");
+  const [checking, setChecking] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch("/api/rss-feeds");
+      if (res.ok) {
+        const data = await res.json();
+        setFeeds(data.feeds ?? []);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  const handleAdd = async () => {
+    if (!url) return;
+    try {
+      await fetch("/api/rss-feeds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, title }),
+      });
+      setUrl("");
+      setTitle("");
+      setMsg("Подписка добавлена");
+      void reload();
+    } catch { setMsg("Ошибка"); }
+  };
+
+  const handleDelete = async (id: string) => {
+    await fetch(`/api/rss-feeds?id=${id}`, { method: "DELETE" });
+    void reload();
+  };
+
+  const handleCheck = async (id: string) => {
+    setChecking(id);
+    try {
+      const res = await fetch(`/api/rss-check?id=${id}`);
+      const data = await res.json();
+      const count = data.newItems?.length ?? 0;
+      setMsg(count > 0 ? `Новых: ${count}` : "Новых статей нет");
+    } catch { setMsg("Ошибка проверки"); }
+    setChecking(null);
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold">RSS-подписки</h2>
+        <p className="text-sm text-muted-foreground">
+          Подпишись на RSS-ленты. Новые статьи проверяются автоматически каждые 30 минут
+          и отправляются в Telegram (если настроен).
+        </p>
+      </div>
+
+      <div className="space-y-2 border rounded-md p-3">
+        <div>
+          <label className="text-sm font-medium">URL ленты</label>
+          <input
+            type="text"
+            className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+            placeholder="https://example.com/feed.xml"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium">Название (опционально)</label>
+          <input
+            type="text"
+            className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+            placeholder="Новости"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </div>
+        <Button type="button" size="sm" onClick={handleAdd}>
+          <PlusIcon className="size-4" />
+          Подписаться
+        </Button>
+      </div>
+
+      {feeds.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Нет подписок</p>
+      ) : (
+        <div className="space-y-2">
+          {feeds.map((f) => (
+            <div key={f.id} className="flex items-center gap-2 border rounded-md p-2">
+              <div className="flex-1">
+                <p className="text-sm font-medium">{f.title}</p>
+                <p className="text-xs text-muted-foreground truncate">{f.url}</p>
+              </div>
+              <Button type="button" size="sm" variant="outline" onClick={() => handleCheck(f.id)} disabled={checking === f.id}>
+                {checking === f.id ? <LoaderIcon className="size-3.5 animate-spin" /> : "Проверить"}
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => handleDelete(f.id)}>
+                <Trash2Icon className="size-3.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
+    </section>
+  );
+}
+
+function CronSection() {
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [name, setName] = useState("");
+  const [cron, setCron] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch("/api/cron-tasks");
+      if (res.ok) {
+        const data = await res.json();
+        setTasks(data.tasks ?? []);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  const handleAdd = async () => {
+    if (!name || !cron || !prompt) { setMsg("Заполни все поля"); return; }
+    try {
+      await fetch("/api/cron-tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, cron, prompt }),
+      });
+      setName(""); setCron(""); setPrompt("");
+      setMsg("Задача создана");
+      void reload();
+    } catch { setMsg("Ошибка"); }
+  };
+
+  const handleDelete = async (id: string) => {
+    await fetch(`/api/cron-tasks?id=${id}`, { method: "DELETE" });
+    void reload();
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold">Cron-задачи</h2>
+        <p className="text-sm text-muted-foreground">
+          Создай задачу, которая будет выполняться по расписанию.
+          В Cron: минуты часы день месяц день-недели. <code>0 9 * * *</code> — каждый день в 9:00.
+          Результат отправляется в Telegram, если настроен.
+        </p>
+      </div>
+
+      <div className="space-y-2 border rounded-md p-3">
+        <div>
+          <label className="text-sm font-medium">Название</label>
+          <input type="text" className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+            placeholder="Утренняя погода" value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div>
+          <label className="text-sm font-medium">Cron-выражение</label>
+          <input type="text" className="flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-sm font-mono"
+            placeholder="0 9 * * *" value={cron} onChange={(e) => setCron(e.target.value)} />
+        </div>
+        <div>
+          <label className="text-sm font-medium">Промпт для AI</label>
+          <textarea className="flex min-h-[60px] w-full rounded-md border bg-transparent px-3 py-1 text-sm"
+            placeholder="Узнай погоду в Минске на сегодня и кратко сообщи" value={prompt}
+            onChange={(e) => setPrompt(e.target.value)} />
+        </div>
+        <Button type="button" size="sm" onClick={handleAdd}>
+          <PlusIcon className="size-4" />
+          Создать задачу
+        </Button>
+      </div>
+
+      {tasks.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Нет задач</p>
+      ) : (
+        <div className="space-y-2">
+          {tasks.map((t) => (
+            <div key={t.id} className="border rounded-md p-2">
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <p className="text-sm font-medium">{t.name}</p>
+                  <p className="text-xs text-muted-foreground font-mono">{t.cron}</p>
+                </div>
+                <Button type="button" size="sm" variant="ghost" onClick={() => handleDelete(t.id)}>
+                  <Trash2Icon className="size-3.5" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1 truncate">
+                {t.lastResult ? `Последний: ${t.lastResult}` : "Ещё не запускалась"}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
+    </section>
   );
 }
