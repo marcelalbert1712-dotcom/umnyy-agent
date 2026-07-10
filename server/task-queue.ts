@@ -95,13 +95,35 @@ export async function runTaskInBackground(taskId: string, executor: () => Promis
   task.status = "running";
   await save();
   try {
-    const result = await executor();
-    task.status = "done";
-    task.result = result;
-  } catch (err: any) {
-    task.status = "error";
-    task.error = err.message ?? String(err);
+const result = await executor();
+      task.status = "done";
+      task.result = result;
+
+      // Auto-notify desktop on completion
+      try {
+        const notifier = (await import("node-notifier")).default;
+        const shortGoal = task.goal.slice(0, 80);
+        notifier.notify({
+          title: "Umnyy Agent — задача завершена",
+          message: shortGoal,
+          sound: false,
+          wait: false,
+        });
+      } catch { /* ignore notifier errors on headless systems */ }
+    } catch (err: any) {
+      task.status = "error";
+      task.error = err.message ?? String(err);
+
+      try {
+        const notifier = (await import("node-notifier")).default;
+        notifier.notify({
+          title: "Umnyy Agent — ошибка задачи",
+          message: (err.message ?? String(err)).slice(0, 100),
+          sound: true,
+          wait: false,
+        });
+      } catch { /* ignore */ }
+    }
+    task.updatedAt = Date.now();
+    await save();
   }
-  task.updatedAt = Date.now();
-  await save();
-}

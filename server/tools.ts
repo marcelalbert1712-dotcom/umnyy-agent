@@ -1516,6 +1516,176 @@ export const tools = {
       return { ok };
     },
   }),
+  showNotification: tool({
+    description: "Показать системное уведомление на рабочем столе пользователя (toast/balloon). Используй после завершения длительных задач.",
+    inputSchema: z.object({
+      title: z.string().describe("Заголовок уведомления (краткий)"),
+      message: z.string().describe("Текст уведомления"),
+    }),
+    execute: async ({ title, message }) => {
+      try {
+        const notifier = (await import("node-notifier")).default;
+        notifier.notify({
+          title: title ?? "Umnyy Agent",
+          message: message ?? "",
+          sound: false,
+          wait: false,
+        });
+        return { ok: true, title, message };
+      } catch (err: any) {
+        return { error: err.message };
+      }
+    },
+  }),
+  generateMindMap: tool({
+    description: "Сгенерировать интерактивный Mind Map (граф) из фактов о пользователе, сохранённых в памяти. Показывает связи между фактами по категориям. Возвращает ссылку на HTML-файл.",
+    inputSchema: z.object({
+      title: z.string().optional().describe("Заголовок Mind Map (по умолчанию 'Что я знаю о пользователе')"),
+    }),
+    execute: async ({ title }) => {
+      const path = await import("node:path");
+      const { promises: fs } = await import("node:fs");
+
+      const { getFactStore } = await import("./user-facts.ts");
+      const store = await getFactStore();
+      const facts = await store.list();
+
+      if (facts.length === 0) {
+        return { error: "Нет фактов в памяти. Сначала собери информацию о пользователе через saveUserFact." };
+      }
+
+      const dir = path.join(process.cwd(), ".user-data", "workspace", currentChatId);
+      await fs.mkdir(dir, { recursive: true });
+
+      // Group facts by category
+      const categories = new Map<string, typeof facts>();
+      for (const f of facts) {
+        const cat = f.category ?? "other";
+        if (!categories.has(cat)) categories.set(cat, []);
+        categories.get(cat)!.push(f);
+      }
+
+      // Colors per category
+      const colorMap: Record<string, string> = {
+        personal: "#4f46e5",
+        work: "#0891b2",
+        preference: "#db2777",
+        hobby: "#16a34a",
+        goal: "#ea580c",
+        other: "#6b7280",
+      };
+
+      const catNames: Record<string, string> = {
+        personal: "Личное",
+        work: "Работа",
+        preference: "Предпочтения",
+        hobby: "Хобби",
+        goal: "Цели",
+        other: "Прочее",
+      };
+
+      // Build nodes and edges for vis-network
+      const nodes: any[] = [];
+      const edges: any[] = [];
+
+      // Central node — user
+      nodes.push({ id: "user", label: "Пользователь", shape: "circle", color: { background: "#1f2937", border: "#111827" }, font: { color: "#fff", size: 18 }, size: 40 });
+
+      // Category nodes
+      for (const [cat, factList] of categories) {
+        const catId = `cat_${cat}`;
+        nodes.push({
+          id: catId,
+          label: `${catNames[cat] ?? cat}\n(${factList.length})`,
+          shape: "box",
+          color: { background: colorMap[cat] ?? "#6b7280", border: colorMap[cat] ?? "#6b7280" },
+          font: { color: "#fff", size: 14 },
+          margin: 10,
+        });
+        edges.push({ from: "user", to: catId, width: 3, color: { color: colorMap[cat] ?? "#6b7280" } });
+
+        for (const f of factList) {
+          const fid = `fact_${f.id}`;
+          const label = (f.text ?? "").slice(0, 60);
+          nodes.push({
+            id: fid,
+            label,
+            shape: "box",
+            color: { background: "#fff", border: colorMap[cat] ?? "#6b7280" },
+            font: { color: "#1f2937", size: 12 },
+            margin: 8,
+          });
+          edges.push({ from: catId, to: fid, width: 1, color: { color: colorMap[cat] ?? "#d1d5db", opacity: 0.7 } });
+        }
+      }
+
+      const html = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title ?? "Mind Map — Umnyy Agent"}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #f9fafb; font-family: 'Segoe UI', Arial, sans-serif; }
+    #header { padding: 12px 20px; background: #fff; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 12px; }
+    #header h1 { font-size: 18px; color: #1f2937; }
+    #header span { color: #6b7280; font-size: 13px; }
+    #network { width: 100%; height: calc(100vh - 50px); border: none; }
+    #legend { display: flex; gap: 12px; flex-wrap: wrap; }
+    .legend-item { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #4b5563; }
+    .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+  </style>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body>
+  <div id="header">
+    <h1>${title ?? "Что я знаю о пользователе"}</h1>
+    <span>${facts.length} фактов · ${categories.size} категорий</span>
+    <div id="legend" style="margin-left: auto;">
+      ${[...categories].map(([cat]) => `<div class="legend-item"><div class="legend-dot" style="background:${colorMap[cat] ?? "#6b7280"}"></div>${catNames[cat] ?? cat}</div>`).join("")}
+    </div>
+  </div>
+  <div id="network"></div>
+  <script>
+    const nodes = new vis.DataSet(${JSON.stringify(nodes)});
+    const edges = new vis.DataSet(${JSON.stringify(edges)});
+    const container = document.getElementById("network");
+    const data = { nodes, edges };
+    const options = {
+      layout: { improvedLayout: true },
+      physics: {
+        enabled: true,
+        barnesHut: {
+          gravitationalConstant: -3000,
+          centralGravity: 0.3,
+          springLength: 120,
+          springConstant: 0.04,
+          damping: 0.09,
+          avoidOverlap: 0.5,
+        },
+        stabilization: { iterations: 150, updateInterval: 25 },
+      },
+      interaction: { hover: true, tooltipDelay: 100 },
+    };
+    const network = new vis.Network(container, data, options);
+  </script>
+</body>
+</html>`;
+
+      const filename = `mindmap-${Date.now()}.html`;
+      const filePath = path.join(dir, filename);
+      await fs.writeFile(filePath, html, "utf8");
+
+      return {
+        ok: true,
+        filePath,
+        httpPath: `/api/workspace/${currentChatId}/${filename}`,
+        facts: facts.length,
+        categories: categories.size,
+      };
+    },
+  }),
 };
 
 /** Извлечь текст из HTML (убрать теги, script, style) */
