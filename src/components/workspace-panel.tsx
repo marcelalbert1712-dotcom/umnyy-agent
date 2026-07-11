@@ -7,6 +7,7 @@ type FileEntry = {
   name: string;
   size: number;
   modifiedAt: number;
+  chatId: string;
 };
 
 export function WorkspacePanel({ chatId }: { chatId: string }) {
@@ -16,24 +17,17 @@ export function WorkspacePanel({ chatId }: { chatId: string }) {
 
   const fetchFiles = useCallback(async () => {
     try {
-      const res = await fetch(`/api/workspace/${encodeURIComponent(chatId)}`);
+      // Load all files from all chats
+      const res = await fetch("/api/workspace-all");
       const data = await res.json();
       const list: FileEntry[] = data.files ?? [];
-      // also fetch default workspace
-      try {
-        const defRes = await fetch("/api/workspace/default");
-        const defData = await defRes.json();
-        for (const f of defData.files ?? []) {
-          if (!list.some((x) => x.name === f.name)) list.push(f);
-        }
-      } catch { /* ignore */ }
       setFiles(list);
       if (list.length > 0 && !openOnce.current) {
         openOnce.current = true;
         setOpen(true);
       }
     } catch { /* ignore */ }
-  }, [chatId]);
+  }, []);
 
   useEffect(() => {
     fetchFiles();
@@ -41,14 +35,10 @@ export function WorkspacePanel({ chatId }: { chatId: string }) {
     return () => clearInterval(id);
   }, [fetchFiles]);
 
-  const handleDelete = async (name: string) => {
+  const handleDelete = async (file: FileEntry) => {
     try {
-      const res = await fetch(`/api/workspace/${encodeURIComponent(chatId)}/${encodeURIComponent(name)}`, { method: "DELETE" });
-      if (!res.ok && chatId !== "default") {
-        // fallback: попробуем удалить из default
-        await fetch(`/api/workspace/default/${encodeURIComponent(name)}`, { method: "DELETE" });
-      }
-      setFiles((prev) => prev.filter((f) => f.name !== name));
+      await fetch(`/api/workspace/${encodeURIComponent(file.chatId)}/${encodeURIComponent(file.name)}`, { method: "DELETE" });
+      setFiles((prev) => prev.filter((f) => f.name !== file.name || f.chatId !== file.chatId));
     } catch { /* ignore */ }
   };
 
@@ -68,15 +58,15 @@ export function WorkspacePanel({ chatId }: { chatId: string }) {
         )}
       </button>
       {open && (
-        <div className="space-y-0.5 px-2 pb-2">
+        <div className="space-y-0.5 px-2 pb-2 max-h-[200px] overflow-y-auto">
           {files.length === 0 ? (
             <p className="px-2 py-2 text-[10px] text-muted-foreground/60">Нет файлов</p>
           ) : (
             files.map((f) => {
               const ext = f.name.split(".").pop()?.toUpperCase();
-              const fileUrl = `/api/workspace/${encodeURIComponent(chatId === "default" ? "default" : chatId)}/${encodeURIComponent(f.name)}`;
+              const fileUrl = `/api/workspace/${encodeURIComponent(f.chatId)}/${encodeURIComponent(f.name)}`;
               return (
-                <div key={f.name} className="group flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs">
+                <div key={`${f.chatId}/${f.name}`} className="group flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs">
                   <FileIcon className="size-3 shrink-0 text-muted-foreground" />
                   <span className="flex-1 min-w-0 truncate text-muted-foreground">{f.name}</span>
                   {ext && <span className="shrink-0 rounded bg-muted px-1 text-[9px] text-muted-foreground">{ext}</span>}
@@ -90,7 +80,7 @@ export function WorkspacePanel({ chatId }: { chatId: string }) {
                     aria-label="Скачать" title="Скачать">
                     <DownloadIcon className="size-3" />
                   </a>
-                  <button type="button" onClick={() => handleDelete(f.name)}
+                  <button type="button" onClick={() => handleDelete(f)}
                     className="hidden rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground group-hover:block"
                     aria-label="Удалить" title="Удалить">
                     <Trash2Icon className="size-3" />

@@ -12,6 +12,41 @@ export function workspaceApiPlugin(): Plugin {
   return {
     name: "workspace-api",
     configureServer(server) {
+      // GET /api/workspace-all — все файлы из всех чатов
+      server.middlewares.use("/api/workspace-all", async (req, res) => {
+        if (req.method !== "GET") {
+          res.statusCode = 405;
+          res.end();
+          return;
+        }
+        try {
+          await fs.mkdir(DATA_DIR, { recursive: true });
+          const chatDirs = await fs.readdir(DATA_DIR);
+          const allFiles: Array<{ name: string; size: number; modifiedAt: number; chatId: string }> = [];
+          for (const dir of chatDirs) {
+            if (dir.startsWith(".")) continue;
+            const dirPath = path.join(DATA_DIR, dir);
+            try {
+              const stat = await fs.stat(dirPath);
+              if (!stat.isDirectory()) continue;
+              const files = await fs.readdir(dirPath);
+              for (const f of files) {
+                try {
+                  const fstat = await fs.stat(path.join(dirPath, f));
+                  allFiles.push({ name: f, size: fstat.size, modifiedAt: fstat.mtimeMs, chatId: dir });
+                } catch { /* skip */ }
+              }
+            } catch { /* skip */ }
+          }
+          allFiles.sort((a, b) => b.modifiedAt - a.modifiedAt);
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ files: allFiles }));
+        } catch (err) {
+          res.statusCode = 500;
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : "Internal error" }));
+        }
+      });
+
       server.middlewares.use("/api/workspace", async (req, res) => {
         // req.url is relative to mount point in Connect; e.g. "/test1" or "/test1/file.js"
         const parts = (req.url ?? "").replace(/^\//, "").split("/");
