@@ -1714,13 +1714,13 @@ export const tools = {
     }),
     execute: async ({ code }) => {
       const { runScript } = await import("./python-sandbox.ts");
-      const result = await runScript(code, 30000);
+      const result = await runScript(code, currentChatId, 30000);
       return {
         ok: result.ok,
         stdout: result.stdout?.slice(0, 5000) ?? "",
         stderr: result.stderr?.slice(0, 1000) ?? "",
         error: result.error,
-        outputFile: result.filePath,
+        httpPath: result.httpPath,
       };
     },
   }),
