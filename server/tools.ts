@@ -1753,7 +1753,7 @@ export const tools = {
     },
   }),
   extractVideoAudio: tool({
-    description: "Извлечь аудиодорожку из видеофайла и сохранить как WAV в workspace. Можешь затем использовать ocrImage?.",
+    description: "Извлечь аудиодорожку из видеофайла и сохранить как WAV в workspace. Затем можешь расшифровать через transcribeAudioFile.",
     inputSchema: z.object({
       filename: z.string().describe("Имя видеофайла в workspace"),
     }),
@@ -1761,6 +1761,45 @@ export const tools = {
       const { extractAudio } = await import("./video-utils.ts");
       const result = await extractAudio(currentChatId, filename);
       return result;
+    },
+  }),
+  transcribeAudioFile: tool({
+    description: "Расшифровать аудиофайл (WAV/MP3) из workspace через Whisper. Возвращает текст. Используй после extractVideoAudio.",
+    inputSchema: z.object({
+      filename: z.string().describe("Имя аудиофайла в workspace"),
+      language: z.string().optional().describe("Язык (по умолчанию ru)"),
+    }),
+    execute: async ({ filename, language }) => {
+      const path = await import("node:path");
+      const { promises: fs } = await import("node:fs");
+      const wsDir = path.join(process.cwd(), ".user-data", "workspace", currentChatId);
+      const filePath = path.join(wsDir, filename);
+      let audioBuffer: Buffer;
+      try { audioBuffer = await fs.readFile(filePath); }
+      catch { return { error: "Аудиофайл не найден в workspace" }; }
+
+      const baseUrl = process.env.POLZAAI_BASE_URL ?? "https://api.polza.ai/v1";
+      const apiKey = process.env.POLZAAI_API_KEY;
+      if (!apiKey) return { error: "POLZAAI_API_KEY не задан" };
+
+      const formData = new FormData();
+      formData.append("file", new Blob([audioBuffer], { type: "audio/wav" }), filename);
+      formData.append("model", "whisper-1");
+      formData.append("language", language ?? "ru");
+      // Also send English as fallback language
+      formData.append("additional_languages", "en");
+
+      const res = await fetch(`${baseUrl}/audio/transcriptions`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: formData,
+      });
+      const data = await res.json() as Record<string, unknown>;
+      if (!res.ok) {
+        const msg = (data as any).error?.message ?? data.error ?? "Whisper API error";
+        return { error: String(msg) };
+      }
+      return { ok: true, text: (data.text ?? "") as string, source: filename };
     },
   }),
 };
