@@ -25,7 +25,7 @@ export default defineConfig(({ mode }) => {
     if (process.env[k] === undefined) process.env[k] = v;
   }
   return {
-    server: { host: true }, // доступ с любых IP (телефон)
+    server: { host: true, watch: null }, // watch:null — отключает chokidar (Unicode path crash)
     plugins: [
       react(),
       tailwindcss(),
