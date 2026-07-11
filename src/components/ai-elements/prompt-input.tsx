@@ -692,7 +692,7 @@ export function PromptInput({
           ref={fileRef}
           type="file"
           multiple
-          accept="image/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.json,.xml"
+          accept="image/*,video/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx,.json,.xml"
           onChange={handleFilePick}
           className="hidden"
         />

@@ -136,7 +136,7 @@ function getToolName(part: { type: string; toolName?: string }): string {
   return part.toolName ?? (part.type.startsWith("tool-") ? part.type.slice("tool-".length) : "");
 }
 
-function uiMessagesToCoreMessages(messages: UIMessage[]): ModelMessage[] {
+function uiMessagesToCoreMessages(messages: UIMessage[], chatId?: string): ModelMessage[] {
   const result: ModelMessage[] = [];
 
   // Keep only last 30 messages to avoid context overflow
@@ -171,6 +171,23 @@ function uiMessagesToCoreMessages(messages: UIMessage[]): ModelMessage[] {
           if (mediaType.startsWith("image/")) {
             const imageUrl = isDataUrl ? url : `data:${mediaType};base64,${data}`;
             content.push({ type: "image", image: imageUrl });
+          } else if (mediaType.startsWith("video/") || mediaType.startsWith("audio/")) {
+            // Video/audio files: save to workspace, add text note (AI doesn't support raw files)
+            const filename = (part as { filename?: string }).filename ?? `uploaded-${Date.now()}`;
+            if (isDataUrl && chatId) {
+              try {
+                const path = await import("node:path");
+                const { promises: fs } = await import("node:fs");
+                const wsDir = path.join(process.cwd(), ".user-data", "workspace", chatId);
+                await fs.mkdir(wsDir, { recursive: true });
+                const savePath = path.join(wsDir, filename);
+                await fs.writeFile(savePath, Buffer.from(data, "base64"));
+              } catch { /* ignore save errors */ }
+            }
+            content.push({
+              type: "text",
+              text: `[Загружен файл: ${filename}]\n(используй getVideoInfo/extractVideoFrames/extractVideoAudio для анализа)`,
+            });
           } else {
             content.push({ type: "file", mediaType, filename: (part as { filename?: string }).filename, data });
           }
@@ -293,7 +310,7 @@ export async function streamChatResponse(
   const effectiveModel = customModel ?? (settings.model || POLZAAI_MODEL_RAW);
   const effectiveTemperature = customTemperature ?? settings.temperature ?? undefined;
 
-  const coreMessages = uiMessagesToCoreMessages(messages);
+  const coreMessages = uiMessagesToCoreMessages(messages, chatId);
   const fileMsgs = coreMessages.filter(
     (m) => m.role === "user" && Array.isArray(m.content) && (m.content as unknown as Array<{ type: string }>).some((p) => p.type === "file"),
   );

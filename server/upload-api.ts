@@ -67,7 +67,7 @@ export function uploadApiPlugin(): Plugin {
           const savedName = `${randomUUID()}${ext}`;
           const filePath = path.join(dir, savedName);
 
-          const base64Data = body.data.replace(/^data:image\/\w+;base64,/, "");
+          const base64Data = body.data.replace(/^data:[^;]+;base64,/, "");
           await fs.writeFile(filePath, Buffer.from(base64Data, "base64"));
 
           const url = `/api/uploads/${chatId}/${savedName}`;
