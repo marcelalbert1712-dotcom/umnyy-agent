@@ -52,14 +52,25 @@ export function BrowserPanel({ chatId }: { chatId: string }) {
     const wsUrl = `${proto}//${window.location.host}/ws?chatId=${encodeURIComponent(chatId)}`;
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout>;
+    let mounted = true;
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT = 3;
+    const RECONNECT_DELAY = 5000;
 
     const connect = () => {
-      ws = new WebSocket(wsUrl);
+      if (!mounted || reconnectAttempts >= MAX_RECONNECT) return;
+      reconnectAttempts++;
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch {
+        return;
+      }
       wsRef.current = ws;
 
       ws.onopen = () => {
         setWsConnected(true);
-        if (pollRef.current) clearInterval(pollRef.current);
+        reconnectAttempts = 0;
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       };
 
       ws.onmessage = (event) => {
@@ -74,37 +85,31 @@ export function BrowserPanel({ chatId }: { chatId: string }) {
       ws.onclose = () => {
         setWsConnected(false);
         wsRef.current = null;
-        // Start polling fallback
-        if (pollRef.current) clearInterval(pollRef.current);
-        pollRef.current = setInterval(refresh, 3000);
-        // Reconnect after 5s
-        reconnectTimer = setTimeout(connect, 5000);
+        if (!mounted) return;
+        // Start polling fallback only once
+        if (!pollRef.current) {
+          pollRef.current = setInterval(refresh, 5000);
+        }
+        // Reconnect with backoff only if under limit
+        if (reconnectAttempts < MAX_RECONNECT) {
+          reconnectTimer = setTimeout(connect, RECONNECT_DELAY * reconnectAttempts);
+        }
       };
 
       ws.onerror = () => {
-        ws?.close();
+        // Don't close here — onclose will handle it
       };
     };
 
     connect();
 
     return () => {
-      if (ws) ws.close();
-      clearTimeout(reconnectTimer);
-      if (pollRef.current) clearInterval(pollRef.current);
+      mounted = false;
+      if (ws) { ws.onclose = null; ws.close(); }
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     };
   }, [chatId, refresh, updateScreenshot]);
-
-  // Initial poll if WS not connected
-  useEffect(() => {
-    if (!wsConnected) {
-      refresh();
-      pollRef.current = setInterval(refresh, 3000);
-    }
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [wsConnected, refresh]);
 
   return (
     <div className="border-t">

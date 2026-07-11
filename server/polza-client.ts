@@ -132,7 +132,11 @@ function getToolName(part: { type: string; toolName?: string }): string {
 function uiMessagesToCoreMessages(messages: UIMessage[]): ModelMessage[] {
   const result: ModelMessage[] = [];
 
-  for (const msg of messages) {
+  // Keep only last 30 messages to avoid context overflow
+  // (each message can contain tool results, screenshots, etc.)
+  const recentMessages = messages.length > 30 ? messages.slice(-30) : messages;
+
+  for (const msg of recentMessages) {
     if (msg.role === "system") {
       const text = msg.parts
         .filter((p) => p.type === "text")
@@ -207,19 +211,28 @@ function uiMessagesToCoreMessages(messages: UIMessage[]): ModelMessage[] {
             });
           }
           if (tp.state === "output-available" || tp.state === "output-error") {
+            let rawValue: string;
+            if (tp.state === "output-error") {
+              rawValue = tp.errorText ?? "Error";
+            } else if (typeof tp.output === "string") {
+              rawValue = tp.output;
+            } else {
+              // Truncate long outputs (screenshots, big HTML, etc.)
+              const str = JSON.stringify(tp.output ?? "");
+              rawValue = str;
+            }
+            // Aggressive truncation: keep tool results short for context window
+            // Screenshots (base64 images) can be 100KB+ — strip them entirely
+            if (rawValue.length > 2000) {
+              // Check if it contains base64 image data
+              const cleaned = rawValue.replace(/data:image\/[^;]+;base64,[A-Za-z0-9+/=]{100,}/g, "[base64-image-stripped]");
+              rawValue = cleaned.length > 2000 ? cleaned.slice(0, 1500) + "\n...[truncated]" : cleaned;
+            }
             toolResults.push({
               type: "tool-result",
               toolCallId: tp.toolCallId,
               toolName,
-              output: {
-                type: "text",
-                value:
-                  tp.state === "output-error"
-                    ? tp.errorText ?? "Error"
-                    : typeof tp.output === "string"
-                      ? tp.output
-                      : JSON.stringify(tp.output ?? ""),
-              },
+              output: { type: "text", value: rawValue },
             });
           }
         }
