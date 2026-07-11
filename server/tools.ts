@@ -1802,6 +1802,140 @@ export const tools = {
       return { ok: true, text: (data.text ?? "") as string, source: filename };
     },
   }),
+analyzeVideo: tool({
+    description:
+      "Единый инструмент для анализа видео за ОДИН шаг: извлекает информацию (длительность, разрешение, кодек), 5 ключевых кадров, описывает их через vision API, извлекает аудиодорожку и транскрипцию через Whisper. Возвращает текстовое описание каждого кадра + транскрипцию. Предпочитай этот инструмент вместо ручной цепочки getVideoInfo→extractVideoFrames→extractVideoAudio→transcribeAudioFile.",
+    inputSchema: z.object({
+      filename: z.string().describe("Имя видеофайла в workspace (MP4, AVI, MOV и др.)"),
+      language: z.string().optional().describe("Язык аудио (по умолчанию ru)"),
+    }),
+    execute: async ({ filename, language }) => {
+      const path = await import("node:path");
+      const { promises: fs } = await import("node:fs");
+      const { getVideoInfo, extractFrames, extractAudio } = await import("./video-utils.ts");
+      const wsDir = path.join(process.cwd(), ".user-data", "workspace", currentChatId);
+      const videoPath = path.join(wsDir, filename);
+
+      try {
+        await fs.access(videoPath);
+      } catch {
+        return { ok: false, error: `Файл "${filename}" не найден в workspace` };
+      }
+
+      // 1. Инфо о видео
+      const info = await getVideoInfo(currentChatId, filename);
+
+      // 2. Извлечь 5 ключевых кадров
+      const framesResult = await extractFrames(currentChatId, filename, 3, 5);
+      const frameHttpPaths: string[] = framesResult.ok ? framesResult.frames : [];
+
+      // 3. Описать каждый кадр через vision API (gpt-4o)
+      const frameDescriptions: string[] = [];
+      if (frameHttpPaths.length > 0) {
+        const baseUrl = process.env.POLZAAI_BASE_URL ?? "https://api.polza.ai/v1";
+        const apiKey = process.env.POLZAAI_API_KEY;
+        if (apiKey) {
+          for (const httpPath of frameHttpPaths) {
+            const frameName = path.basename(httpPath);
+            const framePath = path.join(wsDir, frameName);
+            try {
+              const buf = await fs.readFile(framePath);
+              const base64 = buf.toString("base64");
+              const dataUrl = `data:image/png;base64,${base64}`;
+
+              const res = await fetch(`${baseUrl}/chat/completions`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify({
+                  model: "openai/gpt-4o",
+                  messages: [
+                    {
+                      role: "user",
+                      content: [
+                        { type: "text", text: "Кратко опиши что происходит на этом кадре видео. Что изображено, какие объекты, люди, действия. 2-3 предложения на русском." },
+                        { type: "image_url", image_url: { url: dataUrl } },
+                      ],
+                    },
+                  ],
+                  max_tokens: 200,
+                  temperature: 0.3,
+                }),
+              });
+              if (res.ok) {
+                const data = (await res.json()) as Record<string, unknown>;
+                const desc = ((data.choices as any[])?.[0]?.message?.content ?? "") as string;
+                frameDescriptions.push(`Кадр ${frameDescriptions.length + 1}: ${desc || "описание недоступно"}`);
+              } else {
+                frameDescriptions.push(`Кадр ${frameDescriptions.length + 1}: ошибка vision API (${res.status})`);
+              }
+              await fs.unlink(framePath).catch(() => {});
+            } catch {
+              frameDescriptions.push(`Кадр ${frameDescriptions.length + 1}: ошибка чтения файла`);
+            }
+          }
+        } else {
+          frameDescriptions.push("Vision API недоступен (нет API ключа)");
+        }
+      }
+
+      // 4. Извлечь аудио
+      const audioResult = await extractAudio(currentChatId, filename);
+
+      // 5. Транскрибировать аудио
+      let transcriptionText: string | null = null;
+      if (audioResult.ok && audioResult.audioPath) {
+        const audioFileName = path.basename(audioResult.audioPath);
+        try {
+          const audioBuffer = await fs.readFile(audioResult.audioPath);
+          const baseUrl = process.env.POLZAAI_BASE_URL ?? "https://api.polza.ai/v1";
+          const apiKey = process.env.POLZAAI_API_KEY;
+          if (apiKey) {
+            const formData = new FormData();
+            formData.append("file", new Blob([audioBuffer], { type: "audio/wav" }), audioFileName);
+            formData.append("model", "whisper-1");
+            formData.append("language", language ?? "ru");
+            formData.append("additional_languages", "en");
+            try {
+              const res = await fetch(`${baseUrl}/audio/transcriptions`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${apiKey}` },
+                body: formData,
+              });
+              if (res.ok) {
+                const data = (await res.json()) as Record<string, unknown>;
+                transcriptionText = ((data.text ?? "") as string) || null;
+              }
+            } catch { /* transcription failed */ }
+          }
+        } catch { /* audio read error */ }
+        await fs.unlink(audioResult.audioPath).catch(() => {});
+      }
+
+      const combinedSummary =
+        `=== АНАЛИЗ ВИДЕО: ${filename} ===\n` +
+        `Инфо: ${info.ok ? info.info : "недоступно"}\n` +
+        `Длительность: ${info.duration?.toFixed(1) ?? "?"} сек\n\n` +
+        `--- ОПИСАНИЕ КАДРОВ (${frameDescriptions.length}) ---\n` +
+        (frameDescriptions.length > 0 ? frameDescriptions.join("\n\n") : "кадры не извлечены") +
+        `\n\n--- ТРАНСКРИПЦИЯ АУДИО ---\n` +
+        (transcriptionText ? `"${transcriptionText}"` : "аудио недоступно или без речи") +
+        `\n\n--- ИТОГ ---\n` +
+        `На основе этих данных дай пользователю полный анализ видео: о чём оно, что происходит, какая речь/диалог.`;
+
+      return {
+        ok: true,
+        videoInfo: info.ok ? info.info : "недоступно",
+        duration: info.duration,
+        framesAnalyzed: frameDescriptions.length,
+        frameDescriptions,
+        transcription: transcriptionText,
+        summary: combinedSummary,
+      };
+    },
+  }),
 };
 
 /** Извлечь текст из HTML (убрать теги, script, style) */

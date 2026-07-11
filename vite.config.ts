@@ -17,6 +17,14 @@ import { researchApiPlugin } from "./server/research-api.ts";
 import { uploadApiPlugin } from "./server/upload-api.ts";
 import { integrationsApiPlugin } from "./server/integrations-api.ts";
 
+// Предотвращаем тихий краш сервера при uncaughtException
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL uncaughtException]", err.message, err.stack ?? "");
+});
+process.on("unhandledRejection", (err) => {
+  console.error("[FATAL unhandledRejection]", err);
+});
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   // Грузим .env в process.env, чтобы серверный middleware видел POLZAAI_*.
@@ -25,7 +33,11 @@ export default defineConfig(({ mode }) => {
     if (process.env[k] === undefined) process.env[k] = v;
   }
   return {
-    server: { host: true, watch: null }, // watch:null — отключает chokidar (Unicode path crash)
+    server: {
+      host: true,
+      fs: { strict: false },
+      watch: null,
+    },
     plugins: [
       react(),
       tailwindcss(),

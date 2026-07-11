@@ -32,5 +32,8 @@ dist-ssr
 # Environment variables (secrets)
 .env
 
+# Tesseract OCR language data (large binaries)
+*.traineddata
+
 # Local Netlify folder
 .netlify

@@ -126,6 +126,37 @@ export async function createChat(title = DEFAULT_TITLE): Promise<ChatMeta> {
   return metaFrom(record);
 }
 
+/** Удаляет тяжёлые base64-данные из сообщений перед сохранением на диск.
+ *  ВИДЕО/АУДИО уже сохранены в workspace, base64 в JSON не нужен.
+ *  Большие изображения (>50KB base64) тоже вырезаем, оставляем data-URL мигом. */
+function stripMediaPayload(messages: UIMessage[]): UIMessage[] {
+  return messages.map((msg) => {
+    if (!msg.parts) return msg;
+    const stripped = msg.parts.map((part: any) => {
+      // File part с data: URL — вырезаем payload
+      if (part.type === "file" && typeof part.url === "string" && part.url.startsWith("data:")) {
+        const mediaType = part.mediaType ?? part.mimeType ?? "application/octet-stream";
+        return {
+          ...part,
+          url: `[data:${mediaType};base64,...stripped by saveChat...]`,
+          filename: part.filename ?? "uploaded-file",
+        };
+      }
+      // Image part с data: URL (>50KB) — вырезаем payload
+      if (part.type === "image" && typeof part.image === "string" && part.image.startsWith("data:")) {
+        if (part.image.length > 50_000) {
+          return {
+            ...part,
+            image: `[image stripped by saveChat...]`,
+          };
+        }
+      }
+      return part;
+    });
+    return { ...msg, parts: stripped };
+  });
+}
+
 export async function saveChat(
   id: string,
   data: { title?: string; messages: UIMessage[]; folder?: string | null; archived?: boolean; pinned?: boolean },
@@ -134,16 +165,25 @@ export async function saveChat(
   if (!existing) return null;
   const title = data.title ?? deriveTitle(data.messages, existing.title);
   const now = Date.now();
+
+  // Вырезаем base64-видео/аудио/большие изображения перед сохранением
+  const cleanMessages = stripMediaPayload(data.messages);
+
   const record: ChatRecord = {
     ...existing,
     title,
-    messages: data.messages,
+    messages: cleanMessages,
     updatedAt: now,
   };
   if (data.folder !== undefined) record.folder = data.folder ?? undefined;
   if (data.archived !== undefined) record.archived = data.archived;
   if (data.pinned !== undefined) record.pinned = data.pinned;
-  await atomicWrite(fileFor(id), JSON.stringify(record, null, 2));
+  try {
+    await atomicWrite(fileFor(id), JSON.stringify(record, null, 2));
+  } catch (err) {
+    console.error("[saveChat] atomicWrite failed:", err instanceof Error ? err.message : err);
+    throw err;
+  }
   return metaFrom(record);
 }
 
