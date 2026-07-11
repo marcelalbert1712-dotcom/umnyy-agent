@@ -1724,6 +1724,45 @@ export const tools = {
       };
     },
   }),
+  getVideoInfo: tool({
+    description: "Получить информацию о видеофайле из workspace: длительность, размер, кодек, разрешение.",
+    inputSchema: z.object({
+      filename: z.string().describe("Имя видеофайла в workspace (MP4, AVI, MOV и др.)"),
+    }),
+    execute: async ({ filename }) => {
+      const { getVideoInfo } = await import("./video-utils.ts");
+      return await getVideoInfo(currentChatId, filename);
+    },
+  }),
+  extractVideoFrames: tool({
+    description: "Извлечь кадры из видеофайла. Сохраняет PNG-изображения в workspace — можешь проанализировать их дальше (описать, найти объекты, текст).",
+    inputSchema: z.object({
+      filename: z.string().describe("Имя видеофайла в workspace"),
+      intervalSeconds: z.number().optional().describe("Интервал между кадрами в секундах (по умолчанию 5)"),
+      maxFrames: z.number().optional().describe("Максимум кадров (по умолчанию 10)"),
+    }),
+    execute: async ({ filename, intervalSeconds, maxFrames }) => {
+      const { extractFrames } = await import("./video-utils.ts");
+      const result = await extractFrames(currentChatId, filename, intervalSeconds ?? 5, maxFrames ?? 10);
+      return {
+        ok: result.ok,
+        frames: result.frames,
+        error: result.error,
+        hint: "Чтобы проанализировать кадры, передай ссылки на них в vision API. Например: 'опиши что на этих кадрах' или 'найди текст на этих изображениях'.",
+      };
+    },
+  }),
+  extractVideoAudio: tool({
+    description: "Извлечь аудиодорожку из видеофайла и сохранить как WAV в workspace. Можешь затем использовать ocrImage?.",
+    inputSchema: z.object({
+      filename: z.string().describe("Имя видеофайла в workspace"),
+    }),
+    execute: async ({ filename }) => {
+      const { extractAudio } = await import("./video-utils.ts");
+      const result = await extractAudio(currentChatId, filename);
+      return result;
+    },
+  }),
 };
 
 /** Извлечь текст из HTML (убрать теги, script, style) */
