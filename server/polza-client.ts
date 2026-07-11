@@ -8,6 +8,8 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { tools, setCurrentChatId } from "./tools.ts";
 import { getFactStore } from "./user-facts.ts";
 import { getSettingsStore } from "./user-settings.ts";
+import path from "node:path";
+import { promises as fs } from "node:fs";
 import { buildSystemPrompt } from "./presets.ts";
 import { connectMcpServer, buildMcpAiTools } from "./mcp-manager";
 import { saveSessionMemory, getRecentMemories } from "./session-memory";
@@ -136,7 +138,7 @@ function getToolName(part: { type: string; toolName?: string }): string {
   return part.toolName ?? (part.type.startsWith("tool-") ? part.type.slice("tool-".length) : "");
 }
 
-function uiMessagesToCoreMessages(messages: UIMessage[], chatId?: string): ModelMessage[] {
+async function uiMessagesToCoreMessages(messages: UIMessage[], chatId?: string): Promise<ModelMessage[]> {
   const result: ModelMessage[] = [];
 
   // Keep only last 30 messages to avoid context overflow
@@ -176,8 +178,6 @@ function uiMessagesToCoreMessages(messages: UIMessage[], chatId?: string): Model
             const filename = (part as { filename?: string }).filename ?? `uploaded-${Date.now()}`;
             if (isDataUrl && chatId) {
               try {
-                const path = await import("node:path");
-                const { promises: fs } = await import("node:fs");
                 const wsDir = path.join(process.cwd(), ".user-data", "workspace", chatId);
                 await fs.mkdir(wsDir, { recursive: true });
                 const savePath = path.join(wsDir, filename);
@@ -310,7 +310,7 @@ export async function streamChatResponse(
   const effectiveModel = customModel ?? (settings.model || POLZAAI_MODEL_RAW);
   const effectiveTemperature = customTemperature ?? settings.temperature ?? undefined;
 
-  const coreMessages = uiMessagesToCoreMessages(messages, chatId);
+  const coreMessages = await uiMessagesToCoreMessages(messages, chatId);
   const fileMsgs = coreMessages.filter(
     (m) => m.role === "user" && Array.isArray(m.content) && (m.content as unknown as Array<{ type: string }>).some((p) => p.type === "file"),
   );
