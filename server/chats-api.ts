@@ -106,11 +106,24 @@ export function chatsApiPlugin(): Plugin {
             }
 
             if (req.method === "PUT") {
-              let body: { messages?: UIMessage[]; title?: string; folder?: string | null };
+              let body: { messages?: UIMessage[]; title?: string; folder?: string | null; archived?: boolean; pinned?: boolean };
               try {
                 body = JSON.parse(await readBody(req));
               } catch {
                 return sendJson(res, 400, { error: "Invalid JSON body" });
+              }
+              // If only updating metadata (archived/pinned) without messages, keep existing messages
+              if (body.archived !== undefined || body.pinned !== undefined) {
+                const existing = await getChat(id);
+                const chat = await saveChat(id, {
+                  title: body.title,
+                  messages: body.messages ?? existing?.messages ?? [],
+                  folder: body.folder,
+                  archived: body.archived,
+                  pinned: body.pinned,
+                });
+                if (!chat) return sendJson(res, 404, { error: "Chat not found" });
+                return sendJson(res, 200, { chat });
               }
               const chat = await saveChat(id, {
                 title: body.title,

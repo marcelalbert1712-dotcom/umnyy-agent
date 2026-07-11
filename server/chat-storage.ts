@@ -128,7 +128,7 @@ export async function createChat(title = DEFAULT_TITLE): Promise<ChatMeta> {
 
 export async function saveChat(
   id: string,
-  data: { title?: string; messages: UIMessage[]; folder?: string | null },
+  data: { title?: string; messages: UIMessage[]; folder?: string | null; archived?: boolean; pinned?: boolean },
 ): Promise<ChatMeta | null> {
   const existing = await getChat(id);
   if (!existing) return null;
@@ -141,6 +141,8 @@ export async function saveChat(
     updatedAt: now,
   };
   if (data.folder !== undefined) record.folder = data.folder ?? undefined;
+  if (data.archived !== undefined) record.archived = data.archived;
+  if (data.pinned !== undefined) record.pinned = data.pinned;
   await atomicWrite(fileFor(id), JSON.stringify(record, null, 2));
   return metaFrom(record);
 }

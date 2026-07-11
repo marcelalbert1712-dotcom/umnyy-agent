@@ -60,20 +60,32 @@ export function uploadApiPlugin(): Plugin {
           const body = JSON.parse(raw) as { chatId?: string; filename: string; data: string };
 
           const chatId = body.chatId ?? "default";
-          const dir = path.join(UPLOADS_DIR, chatId);
-          await fs.mkdir(dir, { recursive: true });
-
-          const ext = path.extname(body.filename) || ".jpg";
-          const savedName = `${randomUUID()}${ext}`;
-          const filePath = path.join(dir, savedName);
-
           const base64Data = body.data.replace(/^data:[^;]+;base64,/, "");
-          await fs.writeFile(filePath, Buffer.from(base64Data, "base64"));
+          const ext = path.extname(body.filename) || "";
+          const isVideo = ext.match(/\.(mp4|avi|mov|mkv|webm|flv|wmv|m4v|mp3|wav|m4a|aac|ogg|flac)$/i);
 
-          const url = `/api/uploads/${chatId}/${savedName}`;
-          console.log(`[upload] saved ${body.filename} → ${url} (${base64Data.length} bytes)`);
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ url, filename: savedName }));
+          if (isVideo) {
+            // Save video/audio to workspace (for getVideoInfo/extractVideoFrames tools)
+            const wsDir = path.join(process.cwd(), ".user-data", "workspace", chatId);
+            await fs.mkdir(wsDir, { recursive: true });
+            const savePath = path.join(wsDir, body.filename);
+            await fs.writeFile(savePath, Buffer.from(base64Data, "base64"));
+            const url = `/api/workspace/${chatId}/${body.filename}`;
+            console.log(`[upload] video saved → ${url}`);
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ url, filename: body.filename, workspace: true }));
+          } else {
+            // Save images/other to uploads
+            const dir = path.join(UPLOADS_DIR, chatId);
+            await fs.mkdir(dir, { recursive: true });
+            const savedName = `${randomUUID()}${ext}`;
+            const filePath = path.join(dir, savedName);
+            await fs.writeFile(filePath, Buffer.from(base64Data, "base64"));
+            const url = `/api/uploads/${chatId}/${savedName}`;
+            console.log(`[upload] saved ${body.filename} → ${url}`);
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ url, filename: savedName }));
+          }
         } catch (err: any) {
           console.error("[upload] error:", err.message);
           res.statusCode = 500;

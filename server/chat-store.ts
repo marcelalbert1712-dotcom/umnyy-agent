@@ -6,6 +6,7 @@ export type ChatMeta = {
   createdAt: number;
   updatedAt: number;
   pinned?: boolean;
+  archived?: boolean;
   folder?: string;
 };
 
@@ -35,6 +36,7 @@ export function metaFrom(record: ChatRecord): ChatMeta {
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     pinned: record.pinned,
+    archived: record.archived,
   };
 }
 

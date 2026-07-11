@@ -564,16 +564,65 @@ export function ChatPanel({
     setInput(editText.trim());
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const text = input.trim();
     if ((!text && files.length === 0) || !canSend) return;
     if (researchMode) {
       handleResearch(text);
       return;
     }
+
+    // Separate video/audio files from images/other
+    const videoFiles: File[] = [];
+    const otherFiles: File[] = [];
+    for (const f of files) {
+      if (f.type.startsWith("video/") || f.type.startsWith("audio/")) {
+        videoFiles.push(f);
+      } else {
+        otherFiles.push(f);
+      }
+    }
+
+    // Upload video/audio files to workspace, build text note
+    let videoNote = "";
+    if (videoFiles.length > 0) {
+      const uploadedNames: string[] = [];
+      for (const vf of videoFiles) {
+        try {
+          // Read file as base64
+          const reader = new FileReader();
+          const dataUrl: string = await new Promise((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(vf);
+          });
+
+          // Upload to workspace
+          const res = await fetch("/api/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chatId: chatId,
+              filename: vf.name,
+              data: dataUrl,
+            }),
+          });
+          if (res.ok) {
+            uploadedNames.push(vf.name);
+          }
+        } catch {
+          uploadedNames.push(vf.name + " (ошибка загрузки)");
+        }
+      }
+      if (uploadedNames.length > 0) {
+        videoNote = `\n[Загружены видеофайлы: ${uploadedNames.join(", ")}]\nИспользуй getVideoInfo, extractVideoFrames, extractVideoAudio, transcribeAudioFile для анализа.`;
+      }
+    }
+
+    // Send only non-video files to AI (images etc.)
     const dt = new DataTransfer();
-    for (const f of files) dt.items.add(f);
-    sendMessage({ text, files: dt.files });
+    for (const f of otherFiles) dt.items.add(f);
+    sendMessage({ text: text + videoNote, files: dt.files });
     setInput("");
     setFiles([]);
   };
