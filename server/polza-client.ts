@@ -241,8 +241,14 @@ function uiMessagesToCoreMessages(messages: UIMessage[]): ModelMessage[] {
         }
       }
 
-      if (assistantContent.length > 0) {
-        result.push({ role: "assistant", content: assistantContent });
+      // Filter out orphaned tool-calls (have call but no result in history)
+      const resultIds = new Set(toolResults.map((r) => r.toolCallId));
+      const filteredContent = assistantContent.filter((c) =>
+        c.type !== "tool-call" || resultIds.has(c.toolCallId)
+      );
+
+      if (filteredContent.length > 0) {
+        result.push({ role: "assistant", content: filteredContent });
       }
       if (toolResults.length > 0) {
         result.push({ role: "tool", content: toolResults });
