@@ -1686,6 +1686,44 @@ export const tools = {
       };
     },
   }),
+  pythonInfo: tool({
+    description: "Проверить Python-окружение: версию, установленные пакеты, путь к venv. Если sandbox не инициализирован — создаёт его автоматически.",
+    inputSchema: z.object({}),
+    execute: async () => {
+      const { initSandbox, getInfo } = await import("./python-sandbox.ts");
+      const init = await initSandbox();
+      const info = await getInfo();
+      return { sandbox: init.ok ? "готов" : "ошибка", version: info.version ?? "", packages: info.packages ?? "", venv: info.venv ?? "" };
+    },
+  }),
+  installPackage: tool({
+    description: "Установить Python-пакеты в персистентное окружение (sandbox). Пакеты сохраняются между запусками.",
+    inputSchema: z.object({
+      packages: z.array(z.string()).describe("Список пакетов для установки, например: [\"numpy\", \"pandas\", \"matplotlib\"]"),
+    }),
+    execute: async ({ packages }) => {
+      const { install } = await import("./python-sandbox.ts");
+      const result = await install(packages);
+      return { ok: result.ok, output: result.output.slice(0, 2000), error: result.error };
+    },
+  }),
+  runPython: tool({
+    description: "Выполнить Python-код в изолированном sandbox-окружении. Код выполняется в persistent venv — все ранее установленные пакеты доступны. Результат (stdout) возвращается, полный лог сохраняется в workspace.",
+    inputSchema: z.object({
+      code: z.string().describe("Python-скрипт для выполнения"),
+    }),
+    execute: async ({ code }) => {
+      const { runScript } = await import("./python-sandbox.ts");
+      const result = await runScript(code, 30000);
+      return {
+        ok: result.ok,
+        stdout: result.stdout?.slice(0, 5000) ?? "",
+        stderr: result.stderr?.slice(0, 1000) ?? "",
+        error: result.error,
+        outputFile: result.filePath,
+      };
+    },
+  }),
 };
 
 /** Извлечь текст из HTML (убрать теги, script, style) */
