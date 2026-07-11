@@ -3,7 +3,7 @@ import {
   ArrowLeftIcon,
   CheckIcon,
   ClockIcon,
-  GithubIcon,
+  GitBranchIcon,
   HistoryIcon,
   LoaderIcon,
   MailIcon,
@@ -92,7 +92,7 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
             active={view === "github"}
             onClick={() => setView("github")}
           >
-            <GithubIcon className="size-3.5" />
+            <GitBranchIcon className="size-3.5" />
             GitHub
           </TabButton>
           <TabButton
