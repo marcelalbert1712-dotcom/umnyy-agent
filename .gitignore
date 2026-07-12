@@ -35,5 +35,11 @@ dist-ssr
 # Tesseract OCR language data (large binaries)
 *.traineddata
 
+# Backup state file (local hash tracking)
+.backup-state.json
+
 # Local Netlify folder
 .netlify
+
+# Windows shortcuts
+*.lnk

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { GlobeIcon, RefreshCwIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export function BrowserPanel({ chatId }: { chatId: string }) {
   const [screenshot, setScreenshot] = useState<string | null>(null);
@@ -120,11 +121,18 @@ export function BrowserPanel({ chatId }: { chatId: string }) {
       >
         <GlobeIcon className="size-3.5" />
         <span className="flex-1 text-left">Браузер</span>
-        <span className="text-[10px] text-muted-foreground/50">
-          {wsConnected ? "WS" : "poll"}
+        <span
+          className={cn(
+            "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-normal",
+            wsConnected ? "bg-green-500/10 text-green-500" : "bg-muted text-muted-foreground",
+          )}
+          title={wsConnected ? "Подключён" : "Ожидание"}
+        >
+          {wsConnected && <span className="size-1.5 rounded-full bg-green-500" />}
+          {wsConnected ? "активен" : "спит"}
         </span>
         {error && <span className="size-1.5 rounded-full bg-red-500" title={error} />}
-        {screenshot && !error && <span className="size-1.5 rounded-full bg-green-500" title="Браузер активен" />}
+        {screenshot && !error && !open && <span className="size-1.5 rounded-full bg-green-500" title="Браузер активен" />}
       </button>
       {open && (
         <div className="px-2 pb-2">
@@ -135,7 +143,7 @@ export function BrowserPanel({ chatId }: { chatId: string }) {
           )}
           {screenshot ? (
             <div className="relative">
-              <img src={screenshot} alt="Browser screenshot" className="w-full rounded-lg border" />
+              <img src={screenshot} alt="Скриншот браузера" className="w-full rounded-lg border" />
               <button
                 type="button"
                 onClick={refresh}

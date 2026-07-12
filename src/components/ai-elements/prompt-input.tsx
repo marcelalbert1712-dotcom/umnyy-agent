@@ -445,12 +445,26 @@ export function PromptInput({
     && "mediaDevices" in navigator
     && "MediaRecorder" in window;
 
-  const toggleListening = async () => {
-    if (isListening) {
+  const listeningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopListening = (() => {
+    try {
       mediaRecorderRef.current?.stop();
       streamRef.current?.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-      setIsListening(false);
+    } catch { /* ignore */ }
+    streamRef.current = null;
+    mediaRecorderRef.current = null;
+    setIsListening(false);
+    if (listeningTimeoutRef.current) {
+      clearTimeout(listeningTimeoutRef.current);
+      listeningTimeoutRef.current = null;
+    }
+    ref.current?.focus();
+  });
+
+  const toggleListening = async () => {
+    if (isListening) {
+      stopListening();
       return;
     }
 
@@ -472,6 +486,12 @@ export function PromptInput({
       recorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
         streamRef.current = null;
+        mediaRecorderRef.current = null;
+        setIsListening(false);
+        if (listeningTimeoutRef.current) {
+          clearTimeout(listeningTimeoutRef.current);
+          listeningTimeoutRef.current = null;
+        }
 
         if (audioChunksRef.current.length === 0) return;
 
@@ -493,6 +513,7 @@ export function PromptInput({
           const data = await res.json() as { text?: string; error?: string };
           if (data.text) {
             onChange(data.text);
+            ref.current?.focus();
           } else {
             console.error("Transcription error:", data.error ?? "empty response");
           }
@@ -504,6 +525,7 @@ export function PromptInput({
       mediaRecorderRef.current = recorder;
       recorder.start();
       setIsListening(true);
+      listeningTimeoutRef.current = setTimeout(stopListening, 30000);
     } catch (err) {
       console.error("Microphone error:", err);
     }

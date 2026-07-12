@@ -305,7 +305,7 @@ export const tools = {
 
   generateImage: tool({
     description:
-      "Сгенерировать изображение по текстовому описанию (промпту). Возвращает URL готовой картинки.",
+      "Сгенерировать изображение по текстовому описанию (промпту). Возвращает ссылку на файл в workspace для использования в PDF/отчётах.",
     inputSchema: z.object({
       prompt: z
         .string()
@@ -339,7 +339,7 @@ export const tools = {
         return { error: "Не удалось начать генерацию" };
       }
 
-      for (let i = 0; i < 15; i++) {
+      for (let i = 0; i < 45; i++) {
         await new Promise((r) => setTimeout(r, 2000));
         const poll = await fetch(`${baseUrl}/media/${created.requestId}`, {
           headers: { Authorization: `Bearer ${apiKey}` },
@@ -350,7 +350,27 @@ export const tools = {
           data?: { url?: string }[];
         };
         if (status.status === "completed" && status.data?.[0]?.url) {
-          return { url: status.data[0].url };
+          const imageUrl = status.data[0].url;
+          // Скачиваем и сохраняем в workspace
+          try {
+            const imgRes = await fetch(imageUrl);
+            const buf = Buffer.from(await imgRes.arrayBuffer());
+            const pathMod = await import("node:path");
+            const { promises: fs } = await import("node:fs");
+            const dir = pathMod.join(process.cwd(), ".user-data", "workspace", currentChatId);
+            await fs.mkdir(dir, { recursive: true });
+            const ext = imageUrl.match(/\.(png|jpg|jpeg|gif|webp)/i)?.[1] ?? "png";
+            const imgName = `img-${Date.now()}.${ext}`;
+            const imgPath = pathMod.join(dir, imgName);
+            await fs.writeFile(imgPath, buf);
+            return {
+              url: `/api/workspace/${currentChatId}/${imgName}`,
+              filename: imgName,
+              message: `Изображение сохранено: ${imgName}. Используй в PDF: ![описание](/api/workspace/${currentChatId}/${imgName})`,
+            };
+          } catch {
+            return { url: imageUrl, message: "Не удалось сохранить в workspace, используй прямую ссылку" };
+          }
         }
         if (status.status === "failed") {
           return { error: "Ошибка генерации изображения" };
@@ -532,7 +552,9 @@ export const tools = {
       const dir = path.join(process.cwd(), ".user-data", "workspace", currentChatId);
       await fs.mkdir(dir, { recursive: true });
       const filePath = path.join(dir, filename);
-      await fs.writeFile(filePath, content, "utf8");
+      // Очистка от битых символов
+      const clean = content.replace(/[\uFFFD\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+      await fs.writeFile(filePath, clean, "utf8");
       return { ok: true, filePath, httpPath: `/api/workspace/${currentChatId}/${filename}` };
     },
   }),
@@ -572,13 +594,21 @@ export const tools = {
       const path = await import("node:path");
       const { promises: fs } = await import("node:fs");
       const filePath = path.join(process.cwd(), ".user-data", "workspace", currentChatId, filename);
+      let resolvedPath = filePath;
       try {
         await fs.access(filePath);
       } catch {
-        return { error: `Файл не найден: ${filename}. Используй saveFile или downloadFile сначала.` };
+        // fallback: ищем в server/ (для системных файлов вроде landing-template.html)
+        const serverPath = path.join(process.cwd(), "server", filename);
+        try {
+          await fs.access(serverPath);
+          resolvedPath = serverPath;
+        } catch {
+          return { error: `Файл не найден: ${filename}. Используй saveFile или downloadFile сначала.` };
+        }
       }
       const ext = path.extname(filename).toLowerCase();
-      const buffer = await fs.readFile(filePath);
+      const buffer = await fs.readFile(resolvedPath);
 
       if (ext === ".pdf") {
         const pdfParse = (await import("pdf-parse")).default;
@@ -616,7 +646,223 @@ export const tools = {
           return { type: "json", raw: text, error: "Невалидный JSON, возвращён сырой текст" };
         }
       }
+      // Изображения — возвращаем base64
+      const IMG_EXTS = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"];
+      if (IMG_EXTS.includes(ext)) {
+        const mime = ext === ".svg" ? "image/svg+xml" : `image/${ext.slice(1)}`;
+        const b64 = buffer.toString("base64");
+        return { type: "image", mime, base64: b64, dataUri: `data:${mime};base64,${b64}` };
+      }
       return { type: "text", content: text };
+    },
+  }),
+  createLandingPage: tool({
+    description: "СОЗДАТЬ КРАСИВЫЙ ЛЕНДИНГ НА ЗАДАННУЮ ТЕМУ. Сам генерирует текст, ищет картинки, встраивает их как base64, сохраняет HTML через saveFile. Никаких других инструментов вызывать не нужно.",
+    inputSchema: z.object({
+      topic: z.string().describe("Тема лендинга, например 'конькобежный спорт' или 'искусственный интеллект'"),
+    }),
+    execute: async ({ topic }) => {
+      async function aiText(prompt: string): Promise<string> {
+        const apiKey = process.env.POLZAAI_API_KEY;
+        const baseUrl = process.env.POLZAAI_BASE_URL ?? "https://api.polza.ai/v1";
+        if (!apiKey) return "";
+        try {
+          const res = await fetch(`${baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+            body: JSON.stringify({
+              model: "openai/gpt-4o-mini",
+              messages: [{ role: "user", content: prompt }],
+              max_tokens: 1000,
+              temperature: 0.7,
+            }),
+            signal: AbortSignal.timeout(30_000),
+          });
+          if (!res.ok) return "";
+          const data: any = await res.json();
+          return data.choices?.[0]?.message?.content ?? "";
+        } catch { return ""; }
+      }
+
+      // 1. Генерируем контент через AI
+      const [title, subtitle, section1Text, factItems, section3Title, footerText] = await Promise.all([
+        aiText(`Придумай красивый заголовок для лендинга на тему "${topic}". Только заголовок, 3-6 слов, без кавычек.`),
+        aiText(`Придумай подзаголовок (1 предложение, 8-15 слов) для лендинга на тему "${topic}".`),
+        aiText(`Напиши 2-3 предложения о "${topic}" для первого блока лендинга (описание темы).`),
+        aiText(`Придумай 3 интересных факта о "${topic}". Верни в формате JSON: [{"title":"Короткий заголовок","text":"1-2 предложения"}] Без пояснений, только JSON.`),
+        aiText(`Придумай заголовок для секции галереи на лендинге о "${topic}". 2-4 слова.`),
+        aiText(`Придумай текст для футера лендинга о "${topic}". 1 предложение с упоминанием темы и призывом.`),
+      ]);
+
+      // 2. DuckDuckGo image search (vqd-токен + i.js)
+      async function ddgImageSearch(query: string): Promise<string[]> {
+        const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+        try {
+          const tokenRes = await fetch(`https://duckduckgo.com/?q=${encodeURIComponent(query)}`, {
+            headers: { "User-Agent": UA },
+            signal: AbortSignal.timeout(8000),
+          });
+          if (!tokenRes.ok) return [];
+          const html = await tokenRes.text();
+          const m = html.match(/vqd="([\d-]+)"/);
+          if (!m) return [];
+          const vqd = m[1];
+          const params = new URLSearchParams({ q: query, o: "json", p: "1", vqd, f: ",,,", v7exp: "a" });
+          const imgRes = await fetch(`https://duckduckgo.com/i.js?${params}`, {
+            headers: {
+              "User-Agent": UA,
+              Referer: "https://duckduckgo.com/",
+              "X-Requested-With": "XMLHttpRequest",
+              Accept: "application/json, text/javascript, */*; q=0.01",
+            },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (!imgRes.ok) return [];
+          const data: any = await imgRes.json();
+          return (data.results || []).map((r: any) => r.image).filter(Boolean).slice(0, 8);
+        } catch { return []; }
+      }
+
+      const ddgImages = await ddgImageSearch(topic);
+      let imageUrls = ddgImages.length >= 2 ? ddgImages : [];
+
+      // Если DDG не дал результатов — используем несколько fallback-источников
+      if (imageUrls.length < 3) {
+        const kw = encodeURIComponent(topic);
+        const pics = [
+          `https://images.unsplash.com/photo-1502685104226-ee32379fefbe?w=800&h=600&fit=crop`,
+          `https://images.unsplash.com/photo-1519751138087-5bf79df62d5b?w=800&h=600&fit=crop`,
+          `https://images.unsplash.com/photo-1470071459604-8d7e5a7f2f8d?w=800&h=600&fit=crop`,
+          `https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800&h=600&fit=crop`,
+          `https://images.unsplash.com/photo-1469474968028-56623f02e42e?w=800&h=600&fit=crop`,
+          `https://images.unsplash.com/photo-1472214103451-9374bd1c798e?w=800&h=600&fit=crop`,
+          `https://images.unsplash.com/photo-1509114397022-ed747cca3f65?w=800&h=600&fit=crop`,
+          `https://images.unsplash.com/photo-1534432182915-0fb522a31343?w=800&h=600&fit=crop`,
+          `https://picsum.photos/seed/${kw}1/800/600`,
+          `https://picsum.photos/seed/${kw}2/800/600`,
+          `https://picsum.photos/seed/${kw}3/800/600`,
+        ];
+        // Тасуем и берём первые 4
+        const shuffled = pics.sort(() => Math.random() - 0.5);
+        imageUrls = [...imageUrls, ...shuffled].slice(0, 6);
+      }
+
+      // 3. Скачиваем первые 3 картинки как base64 (для встраивания)
+      const imageDataUris: string[] = [];
+      const imageAlts: string[] = [];
+      const bgCandidates: string[] = [];
+      for (let i = 0; i < Math.min(imageUrls.length, 6); i++) {
+        try {
+          const imgRes = await fetch(imageUrls[i], { signal: AbortSignal.timeout(10_000) });
+          if (imgRes.ok) {
+            const buf = Buffer.from(await imgRes.arrayBuffer());
+            const mime = imgRes.headers.get("content-type") ?? "image/jpeg";
+            const b64 = buf.toString("base64");
+            imageDataUris.push(`data:${mime};base64,${b64}`);
+            imageAlts.push(`${topic} — фото ${i + 1}`);
+          } else {
+            bgCandidates.push(imageUrls[i]);
+          }
+        } catch {
+          bgCandidates.push(imageUrls[i]);
+        }
+      }
+      // Фоновое изображение для hero (первая картинка что нашлась)
+      const heroBgImg = imageDataUris[0] || bgCandidates[0] || "";
+
+      // 5. Читаем шаблон
+      const pathMod = await import("node:path");
+      const fsMod = await import("node:fs/promises");
+      let templateHtml = "";
+      try {
+        templateHtml = await fsMod.readFile(pathMod.join(process.cwd(), "server", "landing-template.html"), "utf-8");
+      } catch {
+        return { error: "Шаблон не найден (landing-template.html)" };
+      }
+
+      // 6. Парсим факты (с очисткой markdown-блоков)
+      function cleanJson(text: string): string {
+        return text.replace(/```json\s*/gi, "").replace(/```\s*/g, "").replace(/^[^{[]+/, "").replace(/[^}\]]+$/, "").trim();
+      }
+      let factHtml = "";
+      try {
+        const cleaned = cleanJson(factItems);
+        const facts = JSON.parse(cleaned);
+        if (Array.isArray(facts)) {
+          factHtml = facts.slice(0, 3).map((f: any) =>
+            `<div class="fact-card"><h3>${f.title || "Факт"}</h3><p>${f.text || ""}</p></div>`
+          ).join("\n");
+        }
+      } catch {
+        const fallback = factItems.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+        factHtml = `<div class="fact-card"><h3>Интересный факт</h3><p>${fallback.slice(0, 300)}</p></div>`;
+      }
+      if (!factHtml) {
+        factHtml = `<div class="fact-card"><h3>О теме</h3><p>Узнайте больше о ${topic}.</p></div>`;
+      }
+
+      // 7. Галерея — base64 + прямые ссылки (с .img-wrap для CSS-эффектов)
+      function wrapGalleryImg(src: string, alt: string): string {
+        return `<div class="img-wrap"><img src="${src}" alt="${alt}" loading="lazy"></div>`;
+      }
+      // Собираем максимум 6 изображений для галереи: сначала base64, потом URL
+      const allGallerySrcs: { src: string; alt: string }[] = [];
+      for (let i = 0; i < imageDataUris.length; i++) {
+        allGallerySrcs.push({ src: imageDataUris[i], alt: imageAlts[i] || topic });
+      }
+      for (let i = 0; i < Math.min(bgCandidates.length, 6 - allGallerySrcs.length); i++) {
+        allGallerySrcs.push({ src: bgCandidates[i], alt: `${topic} — фото ${allGallerySrcs.length + 1}` });
+      }
+      const galleryHtml = allGallerySrcs.length > 0
+        ? allGallerySrcs.map(g => wrapGalleryImg(g.src, g.alt)).join("\n")
+        : "";
+
+      // 8. Картинка для секции 1
+      const section1Img = allGallerySrcs[0]?.src || "";
+      const section1ImgAlt = allGallerySrcs[0]?.alt || topic;
+
+      // 9. Определяем тему для CSS
+      const tl = topic.toLowerCase();
+      let themeClass = "theme-default";
+      if (/лед|коньк|хокк|зим|снег|ice|skat|winter|snow/i.test(tl)) themeClass = "theme-winter";
+      else if (/футбол|стади|мяч|football|soccer|stadium/i.test(tl)) themeClass = "theme-sport";
+      else if (/самол|авиа|пилот|небо|plane|aviation|pilot|flight/i.test(tl)) themeClass = "theme-aviation";
+      else if (/авто|машин|гонк|car|auto|racing|drive/i.test(tl)) themeClass = "theme-auto";
+      else if (/природ|гор|лес|мор|пляж|nature|mountain|forest|sea|beach/i.test(tl)) themeClass = "theme-nature";
+      else if (/технолог|ai|ии|робот|computer|tech|robot|digital/i.test(tl)) themeClass = "theme-tech";
+
+      // 10. Заполняем шаблон
+      const resultHtml = templateHtml
+        .replace(/HERO_BG_IMAGE/g, heroBgImg)
+        .replace(/THEME_CLASS/g, themeClass)
+        .replace(/TITLE_PLACEHOLDER/g, title || topic)
+        .replace(/SUBTITLE_PLACEHOLDER/g, subtitle || "")
+        .replace(/SECTION1_TITLE/g, `О ${topic}`)
+        .replace(/SECTION1_TEXT/g, section1Text || "")
+        .replace(/SECTION1_IMAGE/g, section1Img)
+        .replace(/SECTION1_IMAGE_ALT/g, section1ImgAlt)
+        .replace(/SECTION2_TITLE/g, "Интересные факты")
+        .replace(/SECTION2_SUBTITLE/g, `Что нужно знать о ${topic}`)
+        .replace(/FACTS_PLACEHOLDER/g, factHtml)
+        .replace(/SECTION3_TITLE/g, section3Title || "Фотогалерея")
+        .replace(/SECTION3_SUBTITLE/g, `Красивые фото по теме "${topic}"`)
+        .replace(/GALLERY_PLACEHOLDER/g, galleryHtml)
+        .replace(/FOOTER_TEXT/g, footerText || `© ${new Date().getFullYear()} ${topic}.`);
+
+      // 10. Сохраняем
+      const safeName = topic.replace(/[^a-zA-Zа-яА-Я0-9]/g, "_").toLowerCase().slice(0, 30);
+      const fname = `${safeName}_landing.html`;
+      const wsDir = pathMod.join(process.cwd(), ".user-data", "workspace", currentChatId);
+      await fsMod.mkdir(wsDir, { recursive: true });
+      const savePath = pathMod.join(wsDir, fname);
+      await fsMod.writeFile(savePath, resultHtml, "utf-8");
+
+      return {
+        ok: true,
+        filePath: savePath,
+        httpPath: `/api/workspace/${currentChatId}/${fname}`,
+        message: `Лендинг "${title || topic}" создан!`,
+      };
     },
   }),
   deploySite: tool({
@@ -1316,13 +1562,20 @@ export const tools = {
         .replace(/`([^`]+)`/g, "<code>$1</code>")
         .replace(/\n/g, "<br>");
 
-      const fullHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+      let fullHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
         body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; line-height: 1.6; }
         h1,h2,h3 { color: #333; }
         code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
       </style></head><body>${html}</body></html>`;
 
-      const tmpHtml = path.join(dir, `_tmp_${Date.now()}.html`);
+      fullHtml = fullHtml.replace(
+        /<img\s+src="(\/[^"]+)"([^>]*)>/gi,
+        (_m: string, src: string, rest: string) =>
+          `<img src="http://localhost:5173${src}"${rest}>`
+      );
+
+      const htmlName = `_tmp_${Date.now()}.html`;
+      const tmpHtml = path.join(dir, htmlName);
       const pdfName = filename.replace(/\.md$/i, "") + `-${Date.now()}.pdf`;
       const pdfPath = path.join(dir, pdfName);
 
@@ -1333,7 +1586,7 @@ export const tools = {
       const browser = await chromium.launch({ headless: true, executablePath: chromePath, args: ["--no-sandbox"] });
       try {
         const page = await browser.newPage();
-        await page.goto(`file:///${tmpHtml.replace(/\\/g, "/")}`, { waitUntil: "networkidle" });
+        await page.goto(`http://localhost:5173/api/workspace/${currentChatId}/${htmlName}`, { waitUntil: "networkidle" });
         await page.pdf({ path: pdfPath, format: "A4", printBackground: true, margin: { top: "20mm", bottom: "20mm", left: "15mm", right: "15mm" } });
       } finally {
         await browser.close();
@@ -1341,6 +1594,217 @@ export const tools = {
       }
 
       return { ok: true, filePath: pdfPath, httpPath: `/api/workspace/${currentChatId}/${pdfName}` };
+    },
+  }),
+  generatePDF: tool({
+    description:
+      "Создать PDF из Markdown-текста. Используй ТОЛЬКО когда пользователь ЯВНО попросил 'сделай PDF' или 'сохрани как PDF'. НЕ используй для обычных ответов, отчётов в чате или документов — для этого есть saveFile. НЕ добавляй изображения в content если пользователь не просил их явно.",
+    inputSchema: z.object({
+      title: z.string().describe("Заголовок документа (для титульной страницы)"),
+      content: z.string().describe("Содержимое в формате Markdown"),
+      author: z.string().optional().describe("Автор (по умолчанию 'Umnyy Agent')"),
+    }),
+    execute: async ({ title, content, author }) => {
+      const path = await import("node:path");
+      const { promises: fs } = await import("node:fs");
+
+      const dir = path.join(process.cwd(), ".user-data", "workspace", currentChatId);
+      await fs.mkdir(dir, { recursive: true });
+
+      // Markdown → HTML (расширенный конвертер)
+      function mdToHtml(md: string): string {
+        let html = md;
+        // Code blocks (```lang\ncode\n```)
+        html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) =>
+          `<pre><code>${code.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code></pre>`);
+        // Tables (pipe syntax)
+        html = html.replace(/^\|(.+)\|\n\|[-:\s|]+\|\n((?:\|.+\|\n?)+)/gm, (_m, header, rows) => {
+          const hCells = header.split("|").map((c: string) => c.trim()).filter(Boolean);
+          const thead = `<tr>${hCells.map((c: string) => `<th>${c}</th>`).join("")}</tr>`;
+          const trs = rows.trim().split("\n").map((r: string) => {
+            const cells = r.split("|").map((c: string) => c.trim()).filter((_c, i, arr) => i > 0 && i < arr.length - 1);
+            return `<tr>${cells.map((c: string) => `<td>${c}</td>`).join("")}</tr>`;
+          }).join("");
+          return `<table><thead>${thead}</thead><tbody>${trs}</tbody></table>`;
+        });
+        // Headers
+        html = html.replace(/^###### (.+)$/gm, "<h6>$1</h6>")
+          .replace(/^##### (.+)$/gm, "<h5>$1</h5>")
+          .replace(/^#### (.+)$/gm, "<h4>$1</h4>")
+          .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+          .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+          .replace(/^# (.+)$/gm, "<h1>$1</h1>");
+        // Blockquotes
+        html = html.replace(/^> (.+)$/gm, "<blockquote>$1</blockquote>");
+        // Horizontal rules
+        html = html.replace(/^---$/gm, "<hr>");
+        // Bold, italic, code, links, images
+        html = html
+          .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+          .replace(/\*(.+?)\*/g, "<em>$1</em>")
+          .replace(/`([^`]+)`/g, "<code>$1</code>")
+          .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="width:100%;max-width:100%;height:auto;border-radius:8px;margin:12px 0;" />')
+          .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+        // Lists
+        html = html.replace(/(?:^|\n)((?:\s*[-*]\s.+(?:\n|$))+)/g, (m) => {
+          const items = m.trim().split("\n").map((l) => l.replace(/^\s*[-*]\s/, "")).map((l) => `<li>${l}</li>`).join("");
+          return `<ul>${items}</ul>`;
+        });
+        html = html.replace(/(?:^|\n)((?:\s*\d+\.\s.+(?:\n|$))+)/g, (m) => {
+          const items = m.trim().split("\n").map((l) => l.replace(/^\s*\d+\.\s/, "")).map((l) => `<li>${l}</li>`).join("");
+          return `<ol>${items}</ol>`;
+        });
+        // Paragraphs (double newline = new paragraph)
+        html = html.replace(/\n\n/g, "</p><p>");
+        // Single newlines → <br> (except after block elements)
+        html = html.replace(/(?<!["']>)\n(?!<)/g, "<br>\n");
+        return `<p>${html}</p>`;
+      }
+
+      const bodyHtml = mdToHtml(content);
+      const dateStr = new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+      const authorName = author ?? "Umnyy Agent";
+
+      let fullHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+  @page { margin: 25mm 20mm 25mm 20mm; }
+  @page :first { margin: 0; }
+  body { font-family: 'Georgia', 'Segoe UI', serif; font-size: 12pt; line-height: 1.7; color: #1a1a1a; }
+  .cover { page-break-after: always; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; text-align: center; background: linear-gradient(135deg, #4A90D9 0%, #2D5F8A 100%); color: white; padding: 60px; box-sizing: border-box; }
+  .cover h1 { font-size: 36pt; margin: 0 0 20px 0; font-weight: 700; }
+  .cover .subtitle { font-size: 14pt; opacity: 0.85; margin-top: 10px; }
+  .cover .meta { margin-top: 40px; font-size: 11pt; opacity: 0.7; }
+  h1 { font-size: 22pt; color: #2D5F8A; border-bottom: 2px solid #4A90D9; padding-bottom: 5px; margin-top: 30px; }
+  h2 { font-size: 16pt; color: #2D5F8A; margin-top: 24px; }
+  h3 { font-size: 13pt; color: #444; margin-top: 18px; }
+  p { margin: 8px 0; }
+  ul, ol { margin: 8px 0; padding-left: 24px; }
+  li { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 10pt; }
+  th { background: #4A90D9; color: white; padding: 8px 10px; text-align: left; border: 1px solid #ddd; }
+  td { padding: 6px 10px; border: 1px solid #ddd; }
+  tr:nth-child(even) { background: #f5f8fc; }
+  blockquote { border-left: 4px solid #4A90D9; margin: 12px 0; padding: 8px 16px; background: #f5f8fc; color: #555; font-style: italic; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 14px; border-radius: 6px; overflow-x: auto; font-size: 9pt; line-height: 1.5; }
+  code { background: #e8e8e8; padding: 2px 5px; border-radius: 3px; font-size: 10pt; font-family: 'Consolas', monospace; }
+  pre code { background: none; padding: 0; }
+  hr { border: none; border-top: 2px solid #e0e0e0; margin: 20px 0; }
+  a { color: #4A90D9; text-decoration: none; }
+  .footer { position: fixed; bottom: 0; width: 100%; text-align: center; font-size: 9pt; color: #999; }
+</style></head><body>
+  <div class="cover">
+    <h1>${title}</h1>
+    <div class="subtitle">${authorName}</div>
+    <div class="meta">${dateStr}</div>
+  </div>
+  ${bodyHtml}
+</body></html>`;
+
+      const htmlName = `_pdf_${Date.now()}.html`;
+      const tmpHtml = path.join(dir, htmlName);
+      const pdfName = `report-${Date.now()}.pdf`;
+      const pdfPath = path.join(dir, pdfName);
+
+      // Validate ALL images exist BEFORE generating PDF
+      const missingImgs: string[] = [];
+      const failedImgs: string[] = [];
+      const imgRe = /!\[([^\]]*)\]\(([^)]+)\)/g;
+      let imgMatch: RegExpExecArray | null;
+      while ((imgMatch = imgRe.exec(content)) !== null) {
+        const src = imgMatch[2];
+        const alt = imgMatch[1];
+        if (src.startsWith("/api/workspace/")) {
+          const fname = src.split("/").pop()!;
+          const fpath = path.join(dir, fname);
+          if (!await fs.stat(fpath).then(() => true).catch(() => false)) {
+            missingImgs.push(`${alt} (${fname})`);
+          }
+        } else if (src.startsWith("http://") || src.startsWith("https://")) {
+          try {
+            const headRes = await fetch(src, { method: "HEAD", signal: AbortSignal.timeout(5000) });
+            if (!headRes.ok) failedImgs.push(`${alt} (HTTP ${headRes.status})`);
+          } catch {
+            failedImgs.push(`${alt} (недоступен)`);
+          }
+        }
+      }
+
+      if (missingImgs.length > 0) {
+        return {
+          ok: false,
+          error: `PDF не создан: следующие изображения не найдены в workspace: ${missingImgs.join(", ")}. Сначала вызови generateImage для каждой картинки, получи реальный URL, потом передай его в generatePDF. НЕ выдумывай URL.`,
+        };
+      }
+      if (failedImgs.length > 0) {
+        return {
+          ok: false,
+          error: `PDF не создан: следующие внешние изображения недоступны: ${failedImgs.join(", ")}. Используй generateImage для генерации картинок вместо внешних URL.`,
+        };
+      }
+
+      // Embed all images as base64 data URIs (надёжнее HTTP в headless Chromium)
+      const imgTags: string[] = [];
+      const imgRe2 = /<img\s+src="([^"]+)"([^>]*)>/gi;
+      let im: RegExpExecArray | null;
+      while ((im = imgRe2.exec(fullHtml)) !== null) imgTags.push(im[0]);
+      for (const tag of imgTags) {
+        const m = tag.match(/src="([^"]+)"/);
+        if (!m) continue;
+        const src = m[1];
+        try {
+          let buf: Buffer;
+          let mime = "image/jpeg";
+          if (src.startsWith("/api/workspace/")) {
+            const fname = src.split("/").pop()!;
+            const fpath = path.join(dir, fname);
+            buf = await fs.readFile(fpath);
+            const ext = fname.split(".").pop()?.toLowerCase();
+            if (ext === "png") mime = "image/png";
+            else if (ext === "gif") mime = "image/gif";
+            else if (ext === "webp") mime = "image/webp";
+          } else if (src.startsWith("http://") || src.startsWith("https://")) {
+            const resp = await fetch(src, { signal: AbortSignal.timeout(10000) });
+            buf = Buffer.from(await resp.arrayBuffer());
+            const ct = resp.headers.get("content-type") || "";
+            if (ct.startsWith("image/")) mime = ct;
+          } else continue;
+          const b64 = buf!.toString("base64");
+          fullHtml = fullHtml.replace(tag, `<img src="data:${mime};base64,${b64}" style="width:100%;max-width:100%;height:auto;border-radius:8px;margin:12px 0;" />`);
+        } catch {
+          fullHtml = fullHtml.replace(tag, `<div style="border:2px dashed #ccc;padding:20px;text-align:center;min-height:100px;background:#f9f9f9;margin:12px 0;color:#999;">[изображение: ${src}]</div>`);
+        }
+      }
+
+      await fs.writeFile(tmpHtml, fullHtml, "utf8");
+
+      const { chromium } = await import("playwright");
+      const chromePath = "C:\\Users\\!!!~1\\AppData\\Local\\ms-Playwright\\chromium-1228\\chrome-win64\\chrome.exe";
+      const browser = await chromium.launch({ headless: true, executablePath: chromePath, args: ["--no-sandbox"] });
+      try {
+        const page = await browser.newPage();
+        await page.goto(`file:///${tmpHtml.replace(/\\/g, "/")}`, { waitUntil: "networkidle", timeout: 15000 });
+        await page.pdf({
+          path: pdfPath,
+          format: "A4",
+          printBackground: true,
+          margin: { top: "25mm", bottom: "25mm", left: "20mm", right: "20mm" },
+          displayHeaderFooter: true,
+          headerTemplate: "<div></div>",
+          footerTemplate: '<div style="width:100%;text-align:center;font-size:9pt;color:#999;">— <span class="pageNumber"></span> —</div>',
+        });
+      } finally {
+        await browser.close();
+        await fs.unlink(tmpHtml).catch(() => {});
+      }
+
+      return {
+        ok: true,
+        fileName: pdfName,
+        httpPath: `/api/workspace/${currentChatId}/${pdfName}`,
+        title,
+        pages: "A4",
+        message: `PDF-отчёт "${title}" создан. Ссылка: /api/workspace/${currentChatId}/${pdfName}`,
+      };
     },
   }),
   compareTexts: tool({

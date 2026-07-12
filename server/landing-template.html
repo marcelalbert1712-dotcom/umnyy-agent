@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TITLE_PLACEHOLDER</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',sans-serif;background:#0B0D17;color:#C8CDD5;line-height:1.7;overflow-x:hidden}
+
+/* ── Theme: Winter / Ice ─────────────────── */
+.theme-winter{--bg1:#0a1628;--bg2:#0d2137;--accent:#00d4ff;--accent2:#7ecfff;--glow:rgba(0,212,255,0.15)}
+.theme-winter .hero{background:linear-gradient(135deg,#0a1628,#0d2137,#0a1628)}
+.theme-winter .hero::after{background:radial-gradient(ellipse at 50% 0%,rgba(0,212,255,0.1) 0%,transparent 60%)}
+.theme-winter .accent-line{background:linear-gradient(90deg,transparent,rgba(0,212,255,0.2),rgba(0,212,255,0.4),rgba(0,212,255,0.2),transparent)}
+.theme-winter h1::after{background:linear-gradient(90deg,#00d4ff,transparent)}
+.theme-winter .fact-card h3,.theme-winter .section-title .accent{color:#00d4ff}
+.theme-winter .fact-card:hover{border-color:rgba(0,212,255,0.25);box-shadow:0 16px 48px rgba(0,212,255,0.1)}
+.theme-winter .fact-card::before,.theme-winter .gallery .img-wrap:hover::before{background:linear-gradient(90deg,#00d4ff,rgba(0,212,255,0.1))}
+.theme-winter .mesh-bg .orb:nth-child(1){background:radial-gradient(circle,rgba(0,212,255,0.2),transparent 70%)}
+.theme-winter .mesh-bg .orb:nth-child(3){background:radial-gradient(circle,rgba(126,207,255,0.1),transparent 70%)}
+
+/* ── Theme: Sport / Football ─────────────── */
+.theme-sport{--bg1:#0a1a0a;--bg2:#1a2a0a;--accent:#00e676;--accent2:#69f0ae;--glow:rgba(0,230,118,0.15)}
+.theme-sport .hero{background:linear-gradient(135deg,#0a1a0a,#1a2a0a,#0a1a0a)}
+.theme-sport .hero::after{background:radial-gradient(ellipse at 50% 0%,rgba(0,230,118,0.1) 0%,transparent 60%)}
+.theme-sport .accent-line{background:linear-gradient(90deg,transparent,rgba(0,230,118,0.2),rgba(0,230,118,0.4),rgba(0,230,118,0.2),transparent)}
+.theme-sport h1::after{background:linear-gradient(90deg,#00e676,transparent)}
+.theme-sport .fact-card h3,.theme-sport .section-title .accent{color:#00e676}
+.theme-sport .fact-card:hover{border-color:rgba(0,230,118,0.25);box-shadow:0 16px 48px rgba(0,230,118,0.1)}
+.theme-sport .fact-card::before,.theme-sport .gallery .img-wrap:hover::before{background:linear-gradient(90deg,#00e676,rgba(0,230,118,0.1))}
+.theme-sport .mesh-bg .orb:nth-child(1){background:radial-gradient(circle,rgba(0,230,118,0.2),transparent 70%)}
+
+/* ── Theme: Aviation ─────────────────────── */
+.theme-aviation{--bg1:#0a0a1a;--bg2:#0a1a2a;--accent:#448aff;--accent2:#82b1ff;--glow:rgba(68,138,255,0.15)}
+.theme-aviation .hero{background:linear-gradient(135deg,#0a0a1a,#0a1a2a,#0a0a1a)}
+.theme-aviation .hero::after{background:radial-gradient(ellipse at 50% 0%,rgba(68,138,255,0.1) 0%,transparent 60%)}
+.theme-aviation .accent-line{background:linear-gradient(90deg,transparent,rgba(68,138,255,0.2),rgba(68,138,255,0.4),rgba(68,138,255,0.2),transparent)}
+.theme-aviation h1::after{background:linear-gradient(90deg,#448aff,transparent)}
+.theme-aviation .fact-card h3,.theme-aviation .section-title .accent{color:#448aff}
+.theme-aviation .fact-card:hover{border-color:rgba(68,138,255,0.25);box-shadow:0 16px 48px rgba(68,138,255,0.1)}
+.theme-aviation .fact-card::before,.theme-aviation .gallery .img-wrap:hover::before{background:linear-gradient(90deg,#448aff,rgba(68,138,255,0.1))}
+.theme-aviation .mesh-bg .orb:nth-child(1){background:radial-gradient(circle,rgba(68,138,255,0.2),transparent 70%)}
+
+/* ── Theme: Auto / Racing ────────────────── */
+.theme-auto{--bg1:#1a0a0a;--bg2:#2a0a0a;--accent:#ff1744;--accent2:#ff6d7a;--glow:rgba(255,23,68,0.15)}
+.theme-auto .hero{background:linear-gradient(135deg,#1a0a0a,#2a0a0a,#1a0a0a)}
+.theme-auto .hero::after{background:radial-gradient(ellipse at 50% 0%,rgba(255,23,68,0.1) 0%,transparent 60%)}
+.theme-auto .accent-line{background:linear-gradient(90deg,transparent,rgba(255,23,68,0.2),rgba(255,23,68,0.4),rgba(255,23,68,0.2),transparent)}
+.theme-auto h1::after{background:linear-gradient(90deg,#ff1744,transparent)}
+.theme-auto .fact-card h3,.theme-auto .section-title .accent{color:#ff1744}
+
+/* ── Theme: Nature ───────────────────────── */
+.theme-nature{--bg1:#0a1a0a;--bg2:#0a2a1a;--accent:#00c853;--accent2:#69f0ae;--glow:rgba(0,200,83,0.15)}
+.theme-nature .hero{background:linear-gradient(135deg,#0a1a0a,#0a2a1a,#0a1a0a)}
+
+/* ── Theme: Tech ─────────────────────────── */
+.theme-tech{--bg1:#0a0a1a;--bg2:#1a0a2a;--accent:#7c4dff;--accent2:#b388ff;--glow:rgba(124,77,255,0.15)}
+.theme-tech .hero{background:linear-gradient(135deg,#0a0a1a,#1a0a2a,#0a0a1a)}
+
+/* ── Animated mesh background ────────────── */
+.mesh-bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.mesh-bg .orb{position:absolute;border-radius:50%;filter:blur(100px);opacity:0.3;animation:orbFloat 25s ease-in-out infinite}
+.mesh-bg .orb:nth-child(1){width:700px;height:700px;top:-250px;left:-200px;animation-delay:0s}
+.mesh-bg .orb:nth-child(2){width:500px;height:500px;background:radial-gradient(circle,rgba(27,42,74,0.4),transparent 70%);bottom:-150px;right:-150px;animation-delay:-7s}
+.mesh-bg .orb:nth-child(3){width:400px;height:400px;bottom:40%;left:60%;animation-delay:-14s}
+.mesh-bg .orb:nth-child(4){width:350px;height:350px;background:radial-gradient(circle,rgba(200,205,213,0.06),transparent 70%);top:60%;left:5%;animation-delay:-20s}
+@keyframes orbFloat{0%,100%{transform:translate(0,0) scale(1)}25%{transform:translate(70px,-50px) scale(1.12)}50%{transform:translate(-40px,70px) scale(0.88)}75%{transform:translate(50px,40px) scale(1.06)}}
+
+/* ── Grid overlay ────────────────────────── */
+.grid-overlay{position:fixed;inset:0;z-index:0;pointer-events:none;background-image:linear-gradient(rgba(200,205,213,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(200,205,213,0.03) 1px,transparent 1px);background-size:80px 80px}
+
+/* ── Snow particles (winter) ─────────────── */
+.snow{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.snow span{position:absolute;display:block;width:4px;height:4px;background:rgba(255,255,255,0.4);border-radius:50%;animation:snowFall linear infinite}
+.snow span:nth-child(1){left:10%;animation-duration:12s;animation-delay:0s;width:3px;height:3px}
+.snow span:nth-child(2){left:25%;animation-duration:15s;animation-delay:2s;width:5px;height:5px}
+.snow span:nth-child(3){left:45%;animation-duration:10s;animation-delay:4s;width:2px;height:2px}
+.snow span:nth-child(4){left:65%;animation-duration:18s;animation-delay:1s;width:4px;height:4px}
+.snow span:nth-child(5){left:80%;animation-duration:13s;animation-delay:3s;width:3px;height:3px}
+.snow span:nth-child(6){left:90%;animation-duration:16s;animation-delay:5s;width:5px;height:5px}
+@keyframes snowFall{0%{transform:translateY(-10px) rotate(0deg);opacity:0}10%{opacity:1}90%{opacity:1}100%{transform:translateY(100vh) rotate(360deg);opacity:0}}
+
+/* ── Hero ────────────────────────────────── */
+.hero{position:relative;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 20px;overflow:hidden;z-index:1}
+.hero .hero-bg{position:absolute;inset:0;z-index:-1;background-size:cover;background-position:center;background-repeat:no-repeat;opacity:0.2;transition:opacity 0.5s}
+.hero .hero-overlay{position:absolute;inset:0;z-index:-1}
+.hero h1{font-size:clamp(2.2rem,6vw,4.8rem);font-weight:900;letter-spacing:-1.5px;color:#fff;margin-bottom:16px;position:relative;z-index:2;text-shadow:0 0 80px var(--glow,rgba(228,0,124,0.25))}
+.hero h1::after{content:'';display:block;width:80px;height:4px;margin:24px auto 0;border-radius:2px}
+.hero p{font-size:clamp(1rem,2vw,1.25rem);color:rgba(200,205,213,0.7);max-width:650px;position:relative;z-index:2;font-weight:300;letter-spacing:0.5px}
+
+/* ── Section ─────────────────────────────── */
+section{position:relative;padding:100px 20px;z-index:1}
+.container{max-width:1100px;margin:0 auto;position:relative;z-index:1}
+.section-title{font-size:clamp(1.5rem,3vw,2.2rem);font-weight:700;color:#fff;margin-bottom:10px;letter-spacing:-0.5px;position:relative;display:inline-block}
+.section-title .accent{font-weight:300;margin-right:8px}
+.section-subtitle{font-size:1.05rem;color:rgba(200,205,213,0.4);margin-bottom:50px;font-weight:300}
+
+/* ── Flex row ────────────────────────────── */
+.flex-row{display:flex;gap:60px;align-items:center;flex-wrap:wrap}
+.flex-row .text{flex:1;min-width:300px}
+.flex-row .image{flex:0 0 auto;position:relative;border-radius:18px}
+.flex-row .image::before{content:'';position:absolute;inset:-3px;border-radius:20px;background:linear-gradient(135deg,var(--accent,#E4007C),rgba(27,42,74,0.4));z-index:-1;opacity:0.5;transition:opacity 0.4s}
+.flex-row .image:hover::before{opacity:1}
+.flex-row img{max-width:480px;width:100%;height:auto;border-radius:16px;box-shadow:0 24px 80px rgba(0,0,0,0.6);display:block}
+.flex-row .text p{color:rgba(200,205,213,0.75);font-size:1.05rem;font-weight:300;line-height:1.85;margin-top:16px}
+
+/* ── Facts grid ──────────────────────────── */
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:10px}
+.fact-card{background:linear-gradient(145deg,rgba(255,255,255,0.04),rgba(255,255,255,0.01));border:1px solid rgba(200,205,213,0.08);border-radius:16px;padding:32px 26px;transition:all 0.4s ease;position:relative;overflow:hidden;backdrop-filter:blur(4px)}
+.fact-card::before{content:'';position:absolute;top:0;left:0;width:100%;height:2px;opacity:0;transition:opacity 0.4s;z-index:1}
+.fact-card:hover{background:linear-gradient(145deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02));transform:translateY(-4px)}
+.fact-card:hover::before{opacity:1}
+.fact-card h3{font-size:0.95rem;font-weight:700;margin-bottom:10px;letter-spacing:0.2px}
+.fact-card p{font-size:0.88rem;color:rgba(200,205,213,0.65);line-height:1.7}
+
+/* ── Gallery ─────────────────────────────── */
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:24px;margin-top:10px}
+.gallery .img-wrap{position:relative;border-radius:14px;overflow:hidden}
+.gallery .img-wrap::before{content:'';position:absolute;inset:0;border-radius:14px;border:1px solid rgba(200,205,213,0.08);z-index:1;pointer-events:none;transition:border-color 0.4s}
+.gallery .img-wrap:hover::before{border-color:rgba(0,0,0,0)}
+.gallery .img-wrap::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,transparent 60%,rgba(0,0,0,0.4));z-index:1;pointer-events:none;opacity:0;transition:opacity 0.4s}
+.gallery .img-wrap:hover::after{opacity:1}
+.gallery img{width:100%;height:270px;object-fit:cover;transition:all 0.6s ease;filter:grayscale(20%) brightness(0.85);display:block}
+.gallery .img-wrap:hover img{transform:scale(1.06);filter:grayscale(0%) brightness(1)}
+
+/* ── Footer ──────────────────────────────── */
+footer{position:relative;z-index:1;background:rgba(8,10,18,0.8);border-top:1px solid rgba(200,205,213,0.04);text-align:center;padding:50px 20px;color:rgba(200,205,213,0.25);font-size:0.85rem;backdrop-filter:blur(10px)}
+body:not(.theme-winter) .snow{display:none}
+
+/* ── Accent divider ──────────────────────── */
+.accent-line{position:relative;z-index:1;height:1px;margin:0}
+
+/* ── Responsive ──────────────────────────── */
+@media(max-width:768px){
+  section{padding:60px 16px}
+  .facts{grid-template-columns:1fr}
+  .flex-row{flex-direction:column;gap:30px}
+  .flex-row img{max-width:100%}
+  .gallery{grid-template-columns:1fr}
+  .hero h1{font-size:1.8rem}
+}
+</style>
+</head>
+<body class="THEME_CLASS">
+
+<!-- Animated background -->
+<div class="mesh-bg"><div class="orb"></div><div class="orb"></div><div class="orb"></div><div class="orb"></div></div>
+<div class="grid-overlay"></div>
+<div class="snow"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+
+<!-- Hero -->
+<section class="hero">
+<div class="hero-bg" style="background-image:url(HERO_BG_IMAGE)"></div>
+<div class="hero-overlay"></div>
+<h1>TITLE_PLACEHOLDER</h1>
+<p>SUBTITLE_PLACEHOLDER</p>
+</section>
+
+<div class="accent-line"></div>
+
+<!-- Section 1: About -->
+<section>
+<div class="container">
+<div class="flex-row">
+<div class="text">
+<h2 class="section-title"><span class="accent">//</span>SECTION1_TITLE</h2>
+<p>SECTION1_TEXT</p>
+</div>
+<div class="image">
+<img src="SECTION1_IMAGE" alt="SECTION1_IMAGE_ALT">
+</div>
+</div>
+</div>
+</section>
+
+<div class="accent-line"></div>
+
+<!-- Section 2: Facts -->
+<section>
+<div class="container" style="text-align:center">
+<h2 class="section-title"><span class="accent">//</span>SECTION2_TITLE</h2>
+<p class="section-subtitle">SECTION2_SUBTITLE</p>
+<div class="facts" style="text-align:left">
+FACTS_PLACEHOLDER
+</div>
+</div>
+</section>
+
+<div class="accent-line"></div>
+
+<!-- Section 3: Gallery -->
+<section>
+<div class="container" style="text-align:center">
+<h2 class="section-title"><span class="accent">//</span>SECTION3_TITLE</h2>
+<p class="section-subtitle">SECTION3_SUBTITLE</p>
+<div class="gallery" style="text-align:left">
+GALLERY_PLACEHOLDER
+</div>
+</div>
+</section>
+
+<div class="accent-line"></div>
+
+<!-- Footer -->
+<footer>
+<p>FOOTER_TEXT</p>
+</footer>
+
+</body>
+</html>
