@@ -2,8 +2,10 @@ import type { Plugin, ViteDevServer } from "vite";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { handleFactsRequest } from "./facts-handler.ts";
 import { handleSettingsRequest } from "./settings-handler.ts";
+import { handleSkillsRequest } from "./skills-handler.ts";
 import { getFactStore } from "./user-facts.ts";
 import { getSettingsStore } from "./user-settings.ts";
+import { fileSkillStore } from "./user-skills.ts";
 
 async function readBody(req: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
@@ -37,6 +39,7 @@ export function adminApiPlugin(): Plugin {
 
         if (
           !pathname.startsWith("/api/facts") &&
+          !pathname.startsWith("/api/skills") &&
           pathname !== "/api/settings"
         ) {
           next();
@@ -47,7 +50,7 @@ export function adminApiPlugin(): Plugin {
           // Преобразуем Node IncomingMessage в web-standard Request,
           // чтобы переиспользовать те же handlers, что и в Netlify Functions.
           const body =
-            req.method === "POST" || req.method === "PUT"
+            req.method === "POST" || req.method === "PUT" || req.method === "PATCH"
               ? await readBody(req)
               : undefined;
           const request = new Request(
@@ -65,6 +68,12 @@ export function adminApiPlugin(): Plugin {
               request,
               pathname,
               await getFactStore(),
+            );
+          } else if (pathname.startsWith("/api/skills")) {
+            response = await handleSkillsRequest(
+              request,
+              pathname,
+              fileSkillStore,
             );
           } else {
             response = await handleSettingsRequest(

@@ -61,7 +61,10 @@ try {
     body: formData,
   });
   log(`API ${res.status}`);
-  const data = await res.json();
+  const rawText = await res.text();
+  log(`Raw: ${rawText.slice(0, 200)}`);
+  let data;
+  try { data = JSON.parse(rawText); } catch { data = { text: rawText }; }
   const text = (data.text ?? "").trim();
   log(`Text: "${text.slice(0, 100)}"`);
 

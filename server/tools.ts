@@ -2400,6 +2400,164 @@ analyzeVideo: tool({
       };
     },
   }),
+  installSkillFromGitHub: tool({
+    description: "Поиск и установка навыков для агента из GitHub. Если указать query — найдёт подходящие навыки. Если указать installUrl — установит (после подтверждения пользователя). Проверяет промпт на опасные инструкции перед установкой.",
+    inputSchema: z.object({
+      query: z.string().optional().describe("Поисковый запрос для поиска навыков на GitHub, например 'code review', 'python expert', 'data analysis'"),
+      installUrl: z.string().optional().describe("Прямая ссылка на файл навыка для установки (сырой контент)"),
+      name: z.string().optional().describe("Название навыка (только при installUrl)"),
+      description: z.string().optional().describe("Описание навыка (только при installUrl)"),
+    }),
+    execute: async ({ query, installUrl, name, description }) => {
+      const { getSettingsStore } = await import("./user-settings.ts");
+      const store = await getSettingsStore();
+      const settings = await store.get();
+      const token = settings.githubToken;
+
+      // ── Установка из URL ──────────────────────────────────────
+      if (installUrl) {
+        try {
+          const res = await fetch(installUrl, {
+            headers: token ? { Authorization: `Bearer ${token}`, "User-Agent": "umnyy-agent" } : { "User-Agent": "umnyy-agent" },
+            signal: AbortSignal.timeout(15_000),
+          });
+          if (!res.ok) return { error: `Не удалось загрузить файл: ${res.status}` };
+          const promptText = await res.text();
+          if (!promptText.trim()) return { error: "Файл пуст" };
+
+          // Проверка на опасные инструкции
+          const dangers = [
+            { pattern: /ignore\s+(all\s+)?(previous|instructions|prompt|system)/i, msg: "пытается игнорировать системные инструкции" },
+            { pattern: /rm\s+-rf|del\s+\/f|format\s+|shutdown/i, msg: "содержит деструктивные команды системы" },
+            { pattern: /удали\s+(все\s+)?файлы|форматируй|уничтожь/i, msg: "содержит деструктивные команды на русском" },
+            { pattern: /отправь\s+(мои\s+)?данные|укради|перешли\s+пароль/i, msg: "пытается получить доступ к данным" },
+            { pattern: /измени\s+(мой\s+)?промпт|перепиши\s+системное/i, msg: "пытается изменить собственные инструкции" },
+          ];
+          const foundDangers = dangers
+            .filter((d) => d.pattern.test(promptText))
+            .map((d) => d.msg);
+
+          if (foundDangers.length > 0) {
+            return {
+              warning: "Найдены потенциально опасные инструкции",
+              dangers: foundDangers,
+              prompt: promptText.slice(0, 2000),
+              message: "Установка отклонена. Промпт содержит подозрительные паттерны. Проверь источник вручную.",
+              installed: false,
+            };
+          }
+
+          // Установка через API
+          const finalName = name?.trim() || promptText.split("\n")[0].slice(0, 40).replace(/[#*_]/g, "").trim() || "Навык из GitHub";
+          const finalDesc = description?.trim() || `Установлен из ${installUrl}`;
+          const apiRes = await fetch("http://localhost:5173/api/skills", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: finalName, description: finalDesc, prompt: promptText.trim() }),
+          });
+          if (!apiRes.ok) {
+            const err = await apiRes.json().catch(() => ({}));
+            return { error: `Не удалось сохранить навык: ${(err as any).error || apiRes.status}` };
+          }
+          const data = await apiRes.json();
+          return {
+            installed: true,
+            skill: (data as any).skill,
+            message: `Навык «${finalName}» установлен! Он активен и будет применён в следующих ответах агента.`,
+          };
+        } catch (e: any) {
+          return { error: `Ошибка при установке: ${e.message}` };
+        }
+      }
+
+      // ── Поиск навыков на GitHub ──────────────────────────────
+      if (!query) return { error: "Укажите query для поиска или installUrl для установки" };
+
+      try {
+        const headers: Record<string, string> = { Accept: "application/vnd.github+json", "User-Agent": "umnyy-agent" };
+        if (token) headers.Authorization = `Bearer ${token}`;
+
+        // Ищем репозитории по теме + skill/agent/prompt
+        const repoRes = await fetch(
+          `https://api.github.com/search/repositories?q=${encodeURIComponent(query + " skill OR prompt OR agent")}&sort=stars&per_page=10`,
+          { headers, signal: AbortSignal.timeout(10_000) },
+        );
+
+        if (!repoRes.ok) {
+          return { error: `GitHub API error (${repoRes.status}). Попробуй добавить GitHub Token в админку для повышения лимита.` };
+        }
+
+        const repoData: any = await repoRes.json();
+        const repos = (repoData.items || []).slice(0, 6);
+
+        // Для каждого репозитория ищем skill-файлы
+        const results: any[] = [];
+        for (const repo of repos) {
+          const repoFull = repo.full_name;
+          const defaultBranch = repo.default_branch || "main";
+          const candidateFiles = ["skill.json", "skill.yaml", "skill.yml", "skills.json", "README.md", "prompt.md", "instructions.md"];
+
+          for (const fname of candidateFiles) {
+            const rawUrl = `https://raw.githubusercontent.com/${repoFull}/${defaultBranch}/${fname}`;
+            try {
+              const fileRes = await fetch(rawUrl, { signal: AbortSignal.timeout(5_000) });
+              if (fileRes.ok) {
+                const content = await fileRes.text();
+                // Пытаемся распарсить JSON/YAML или просто используем как текст
+                let skillName = repo.name.replace(/[-_]/g, " ");
+                let skillDesc = repo.description?.slice(0, 200) || "";
+                let skillPrompt = content.slice(0, 3000);
+
+                // Если это JSON с name/prompt
+                try {
+                  const parsed = JSON.parse(content);
+                  if (parsed.name) skillName = parsed.name;
+                  if (parsed.description) skillDesc = parsed.description;
+                  if (parsed.prompt) skillPrompt = parsed.prompt;
+                  if (parsed.system_prompt) skillPrompt = parsed.system_prompt;
+                } catch { /* не JSON — используем как plain text */ }
+
+                results.push({
+                  type: "skill",
+                  name: skillName,
+                  description: skillDesc.slice(0, 200),
+                  stars: repo.stargazers_count,
+                  source: `${repoFull}/${fname}`,
+                  installUrl: rawUrl,
+                  preview: skillPrompt.slice(0, 400),
+                  fullContent: skillPrompt,
+                });
+                break; // нашли файл в этом репозитории
+              }
+            } catch { /* skip */ }
+          }
+
+          // Если не нашли skill-файлов — добавляем репозиторий как ссылку
+          if (!results.find((r) => r.source?.startsWith(repoFull))) {
+            results.push({
+              type: "repository",
+              name: repo.full_name,
+              description: repo.description?.slice(0, 200) || "",
+              stars: repo.stargazers_count,
+              url: repo.html_url,
+              installUrl: `https://raw.githubusercontent.com/${repoFull}/${defaultBranch}/README.md`,
+              preview: "Вручную проверь README и установи через installUrl, если подходит.",
+            });
+          }
+        }
+
+        return {
+          searchQuery: query,
+          results,
+          message: results.length > 0
+            ? `Найдено ${results.length} результатов. Напиши номер (1-${results.length}) для установки или укажи свой installUrl.`
+            : "Ничего не найдено. Попробуй другой запрос.",
+        };
+      } catch (e: any) {
+        return { error: `Ошибка поиска: ${e.message}` };
+      }
+    },
+  }),
 };
 
 /** Извлечь текст из HTML (убрать теги, script, style) */

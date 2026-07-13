@@ -17,24 +17,41 @@ export async function handleTranscribeRequest(req: Request): Promise<Response> {
   }
 
   const buffer = Buffer.from(body.audio, "base64");
-  const formData = new FormData();
-  formData.append("file", new Blob([buffer], { type: body.mimeType ?? "audio/webm" }), "audio.webm");
-  formData.append("model", "whisper-1");
-  formData.append("language", "ru");
+  const mime = body.mimeType ?? "audio/webm";
 
-  const whisperRes = await fetch(`${baseUrl}/audio/transcriptions`, {
+  // Пробуем с оригинальным форматом
+  const formData = new FormData();
+  const ext = mime.includes("wav") ? "wav" : mime.includes("mp4") ? "mp4" : "webm";
+  formData.append("file", new Blob([buffer], { type: mime }), `audio.${ext}`);
+  formData.append("model", "whisper-1");
+
+  let whisperRes = await fetch(`${baseUrl}/audio/transcriptions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
     body: formData,
   });
 
-  const data = await whisperRes.json() as Record<string, unknown>;
+  let data = await whisperRes.json() as Record<string, unknown>;
 
-  if (!whisperRes.ok) {
-    const msg = (data.error as { message?: string })?.message ?? "Whisper API error";
-    return Response.json({ error: msg }, { status: 502 });
+  // Если не удалось — пробуем без codec в mime (например audio/webm без ;codecs=opus)
+  if (!whisperRes.ok && mime.includes(";")) {
+    const simpleMime = mime.split(";")[0];
+    const form2 = new FormData();
+    form2.append("file", new Blob([buffer], { type: simpleMime }), `audio.${ext}`);
+    form2.append("model", "whisper-1");
+    whisperRes = await fetch(`${baseUrl}/audio/transcriptions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form2,
+    });
+    data = await whisperRes.json() as Record<string, unknown>;
   }
 
-  const text = typeof data.text === "string" ? data.text : "";
+  if (!whisperRes.ok) {
+    const errDetail = typeof data === "object" ? JSON.stringify(data).slice(0, 200) : "Whisper API error";
+    return Response.json({ error: errDetail }, { status: 502 });
+  }
+
+  const text = typeof data.text === "string" ? data.text.trim() : "";
   return Response.json({ text });
 }

@@ -6,6 +6,7 @@ import { connectMcpServer, buildMcpAiTools } from "./mcp-manager";
 import { updateTask } from "./task-queue.ts";
 import { getRecentMemories } from "./session-memory.ts";
 import { SYSTEM_PROMPT } from "./polza-client.ts";
+import { fileSkillStore, getActiveSkillsPrompt } from "./user-skills.ts";
 
 function getEnv(name: string, fallback: string): string {
   return (process.env as Record<string, string>)[name] ?? fallback;
@@ -58,8 +59,10 @@ export async function runBackgroundAgent(
 
   const settingsStore = await getSettingsStore();
   const settings = await settingsStore.get();
+  const allSkills = await fileSkillStore.list();
+  const skillsPrompt = getActiveSkillsPrompt(allSkills);
   const system = buildSystemPrompt(
-    SYSTEM_PROMPT,
+    SYSTEM_PROMPT + skillsPrompt,
     settings.preset,
     settings.customPrompt,
   );

@@ -16,6 +16,7 @@ import { wsPlugin } from "./server/ws-server.ts";
 import { researchApiPlugin } from "./server/research-api.ts";
 import { uploadApiPlugin } from "./server/upload-api.ts";
 import { integrationsApiPlugin } from "./server/integrations-api.ts";
+import { startTelegramPolling } from "./server/telegram-polling.ts";
 
 // Предотвращаем тихий краш сервера при uncaughtException
 process.on("uncaughtException", (err) => {
@@ -55,6 +56,12 @@ export default defineConfig(({ mode }) => {
       researchApiPlugin(),
       uploadApiPlugin(),
       integrationsApiPlugin(),
+      {
+        name: "telegram-polling",
+        configureServer() {
+          startTelegramPolling();
+        },
+      },
     ],
     resolve: {
       alias: {

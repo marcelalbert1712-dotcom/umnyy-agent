@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeftIcon,
+  BookOpenIcon,
   CheckIcon,
   ClockIcon,
   GitBranchIcon,
@@ -41,7 +42,7 @@ const CATEGORIES: FactCategory[] = [
   "other",
 ];
 
-type View = "facts" | "character" | "mcp" | "telegram" | "github" | "email" | "rss" | "cron" | "log";
+type View = "facts" | "character" | "mcp" | "telegram" | "github" | "email" | "rss" | "cron" | "log" | "skills";
 
 export type AdminPanelProps = {
   onBack: () => void;
@@ -117,6 +118,13 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
             Задачи
           </TabButton>
           <TabButton
+            active={view === "skills"}
+            onClick={() => setView("skills")}
+          >
+            <BookOpenIcon className="size-3.5" />
+            Навыки
+          </TabButton>
+          <TabButton
             active={view === "log"}
             onClick={() => setView("log")}
           >
@@ -144,6 +152,8 @@ export function AdminPanel({ onBack }: AdminPanelProps) {
             <RssSection />
           ) : view === "cron" ? (
             <CronSection />
+          ) : view === "skills" ? (
+            <SkillsSection />
           ) : (
             <LogSection />
           )}
@@ -1491,5 +1501,326 @@ function CronSection() {
 
       {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
     </section>
+  );
+}
+
+// ── Навыки ──────────────────────────────────────────────────────────────────
+
+type SkillItem = {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+  enabled: boolean;
+  createdAt: number;
+};
+
+function SkillsSection() {
+  const [skills, setSkills] = useState<SkillItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch("/api/skills");
+      if (res.ok) {
+        const data = await res.json();
+        setSkills(data.skills ?? []);
+      } else {
+        setSkills([]);
+      }
+    } catch {
+      setSkills([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const handleToggle = async (id: string, current: boolean) => {
+    try {
+      const res = await fetch(`/api/skills/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !current }),
+      });
+      if (res.ok) {
+        setSkills((prev) =>
+          prev?.map((s) => (s.id === id ? { ...s, enabled: !current } : s)) ?? null,
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await fetch(`/api/skills/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setSkills((prev) => prev?.filter((s) => s.id !== id) ?? null);
+      } else {
+        setError("Не удалось удалить навык");
+      }
+    } catch {
+      setError("Сеть недоступна");
+    }
+  };
+
+  if (skills === null) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <LoaderIcon className="size-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-lg font-semibold">Навыки агента</h2>
+        <p className="text-sm text-muted-foreground">
+          Навыки — это дополнительные инструкции, которые агент получает в каждом
+          диалоге. Включи нужные — агент будет следовать им автоматически.
+        </p>
+      </div>
+
+      {error && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => setAdding((v) => !v)}
+      >
+        <PlusIcon className="size-4" />
+        {adding ? "Отмена" : "Добавить навык"}
+      </Button>
+
+      {adding && (
+        <SkillForm
+          onSaved={() => {
+            setAdding(false);
+            void reload();
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
+
+      {skills.length === 0 ? (
+        <p className="rounded-lg border border-dashed bg-muted/30 px-4 py-10 text-center text-sm text-muted-foreground">
+          Навыков пока нет.
+          <br />
+          Добавьте инструкцию для агента, например: «Всегда проверяй код на утечки
+          памяти».
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {skills.map((skill) =>
+            editingId === skill.id ? (
+              <li key={skill.id}>
+                <SkillForm
+                  initial={skill}
+                  onSaved={() => {
+                    setEditingId(null);
+                    void reload();
+                  }}
+                  onCancel={() => setEditingId(null)}
+                />
+              </li>
+            ) : (
+              <SkillRow
+                key={skill.id}
+                skill={skill}
+                onEdit={() => setEditingId(skill.id)}
+                onDelete={() => void handleDelete(skill.id)}
+                onToggle={() => void handleToggle(skill.id, skill.enabled)}
+              />
+            ),
+          )}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function SkillRow({
+  skill,
+  onEdit,
+  onDelete,
+  onToggle,
+}: {
+  skill: SkillItem;
+  onEdit: () => void;
+  onDelete: () => void;
+  onToggle: () => void;
+}) {
+  const [confirm, setConfirm] = useState(false);
+  return (
+    <li className="flex items-start gap-3 rounded-lg border bg-card p-3">
+      <button
+        type="button"
+        onClick={onToggle}
+        className={cn(
+          "mt-1 flex size-6 shrink-0 items-center justify-center rounded border text-xs font-bold transition-colors",
+          skill.enabled
+            ? "border-green-500 bg-green-500/10 text-green-600"
+            : "border-muted-foreground/30 text-muted-foreground/50",
+        )}
+        title={skill.enabled ? "Отключить" : "Включить"}
+      >
+        {skill.enabled ? <CheckIcon className="size-3" /> : <XIcon className="size-3" />}
+      </button>
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className="text-sm font-medium">{skill.name}</p>
+        {skill.description && (
+          <p className="text-xs text-muted-foreground">{skill.description}</p>
+        )}
+        <p className="text-[11px] text-muted-foreground/60 line-clamp-2 font-mono">
+          {skill.prompt}
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          aria-label="Редактировать"
+          onClick={onEdit}
+          className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <PencilIcon className="size-4" />
+        </button>
+        {confirm ? (
+          <span className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={onDelete}
+              className="rounded px-1.5 py-1 text-[11px] text-destructive hover:bg-destructive/10"
+            >
+              Удалить
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirm(false)}
+              className="rounded px-1.5 py-1 text-[11px] text-muted-foreground hover:bg-muted"
+            >
+              Нет
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            aria-label="Удалить"
+            onClick={() => setConfirm(true)}
+            className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2Icon className="size-4" />
+          </button>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function SkillForm({
+  initial,
+  onSaved,
+  onCancel,
+}: {
+  initial?: SkillItem;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(initial?.name ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [prompt, setPrompt] = useState(initial?.prompt ?? "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!name.trim()) {
+      setErr("Введите название навыка");
+      return;
+    }
+    if (!prompt.trim()) {
+      setErr("Введите промпт навыка");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      const body = {
+        name: name.trim(),
+        description: description.trim(),
+        prompt: prompt.trim(),
+      };
+      const res = initial
+        ? await fetch(`/api/skills/${encodeURIComponent(initial.id)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          })
+        : await fetch("/api/skills", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+      if (res.ok) {
+        onSaved();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setErr(data.error ?? "Не удалось сохранить");
+      }
+    } catch {
+      setErr("Сеть недоступна");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 rounded-lg border bg-card p-3">
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Название навыка"
+        className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
+      <input
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Краткое описание (что делает навык)"
+        className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
+      <textarea
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        rows={4}
+        placeholder='Инструкция для агента. Например: «Всегда проверяй код на утечки памяти, используй strict null checks, добавляй JSDoc-комментарии.»'
+        className="w-full resize-y rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
+      {err && <p className="text-xs text-destructive">{err}</p>}
+      <div className="flex items-center gap-2">
+        <Button type="button" size="sm" onClick={submit} disabled={saving}>
+          {saving ? (
+            <LoaderIcon className="size-4 animate-spin" />
+          ) : (
+            <SaveIcon className="size-4" />
+          )}
+          Сохранить
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onCancel} disabled={saving}>
+          <XIcon className="size-4" />
+          Отмена
+        </Button>
+      </div>
+    </div>
   );
 }

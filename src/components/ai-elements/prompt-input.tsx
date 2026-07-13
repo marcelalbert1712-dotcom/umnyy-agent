@@ -437,23 +437,53 @@ export function PromptInput({
   const [cursorPos, setCursorPos] = useState(0);
   const [selectedSuggestion, setSelectedSuggestion] = useState(-1);
   const [isListening, setIsListening] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const pcmDataRef = useRef<Float32Array[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
   const isSupported = typeof navigator !== "undefined"
     && "mediaDevices" in navigator
-    && "MediaRecorder" in window;
+    && "AudioContext" in window;
 
   const listeningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Конвертируем Float32 PCM в WAV (16-bit mono)
+  function pcmToWav(samples: Float32Array): ArrayBuffer {
+    const numSamples = samples.length;
+    const buffer = new ArrayBuffer(44 + numSamples * 2);
+    const view = new DataView(buffer);
+    const writeString = (off: number, str: string) => {
+      for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i));
+    };
+    writeString(0, "RIFF");
+    view.setUint32(4, 36 + numSamples * 2, true);
+    writeString(8, "WAVE");
+    writeString(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // mono
+    view.setUint32(24, 16000, true);
+    view.setUint32(28, 16000 * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, "data");
+    view.setUint32(40, numSamples * 2, true);
+    for (let i = 0; i < numSamples; i++) {
+      const s = Math.max(-1, Math.min(1, samples[i]));
+      view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    }
+    return buffer;
+  }
+
   const stopListening = (() => {
     try {
-      mediaRecorderRef.current?.stop();
       streamRef.current?.getTracks().forEach(t => t.stop());
     } catch { /* ignore */ }
     streamRef.current = null;
-    mediaRecorderRef.current = null;
+    if (audioCtxRef.current) {
+      audioCtxRef.current.close().catch(() => {});
+      audioCtxRef.current = null;
+    }
     setIsListening(false);
     if (listeningTimeoutRef.current) {
       clearTimeout(listeningTimeoutRef.current);
@@ -469,35 +499,44 @@ export function PromptInput({
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      pcmDataRef.current = [];
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
       streamRef.current = stream;
 
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : "audio/webm";
+      const audioCtx = new AudioContext({ sampleRate: 16000 });
+      audioCtxRef.current = audioCtx;
+      const source = audioCtx.createMediaStreamSource(stream);
+      const scriptNode = audioCtx.createScriptProcessor(4096, 1, 1);
 
-      const recorder = new MediaRecorder(stream, { mimeType });
-      audioChunksRef.current = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      scriptNode.onaudioprocess = (e) => {
+        const channel = e.inputBuffer.getChannelData(0);
+        pcmDataRef.current.push(new Float32Array(channel));
       };
 
-      recorder.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        streamRef.current = null;
-        mediaRecorderRef.current = null;
-        setIsListening(false);
-        if (listeningTimeoutRef.current) {
-          clearTimeout(listeningTimeoutRef.current);
-          listeningTimeoutRef.current = null;
+      source.connect(scriptNode);
+      scriptNode.connect(audioCtx.destination);
+
+      // Останавливаем через 30 секунд
+      const stopTimer = setTimeout(async () => {
+        stopListening();
+
+        if (pcmDataRef.current.length === 0) return;
+
+        // Собираем все PCM-чанки в один массив
+        let totalLen = 0;
+        for (const chunk of pcmDataRef.current) totalLen += chunk.length;
+        const allSamples = new Float32Array(totalLen);
+        let offset = 0;
+        for (const chunk of pcmDataRef.current) {
+          allSamples.set(chunk, offset);
+          offset += chunk.length;
         }
 
-        if (audioChunksRef.current.length === 0) return;
-
-        const blob = new Blob(audioChunksRef.current, { type: mimeType });
-        const buffer = await blob.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
+        // Конвертируем в WAV
+        const wavBuffer = pcmToWav(allSamples);
+        const bytes = new Uint8Array(wavBuffer);
         let binary = "";
         for (let i = 0; i < bytes.length; i++) {
           binary += String.fromCharCode(bytes[i]);
@@ -508,7 +547,7 @@ export function PromptInput({
           const res = await fetch("/api/transcribe", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ audio: base64, mimeType }),
+            body: JSON.stringify({ audio: base64, mimeType: "audio/wav" }),
           });
           const data = await res.json() as { text?: string; error?: string };
           if (data.text) {
@@ -520,12 +559,10 @@ export function PromptInput({
         } catch (err) {
           console.error("Transcription fetch error:", err);
         }
-      };
+      }, 30000);
+      listeningTimeoutRef.current = stopTimer;
 
-      mediaRecorderRef.current = recorder;
-      recorder.start();
       setIsListening(true);
-      listeningTimeoutRef.current = setTimeout(stopListening, 30000);
     } catch (err) {
       console.error("Microphone error:", err);
     }
